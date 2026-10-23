@@ -2,7 +2,7 @@ name: Publish ZhiXue Atlas
 on:
   push:
     branches: [main]
-    paths: [zhixue-atlas-source.zip, .github/workflows/pages.yml]
+    paths: [zhixue-atlas-source.zip, site-source/**, .github/workflows/pages.yml]
   workflow_dispatch:
 permissions:
   contents: read
@@ -19,28 +19,49 @@ jobs:
       url: ${{ steps.publish.outputs.page_url }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - name: Unpack editable source
-        run: unzip -q zhixue-atlas-source.zip -d site-source
+        with:
+          persist-credentials: false
+      - name: Prepare editable source
+        run: |
+          set -euo pipefail
+          mkdir -p .build/site
+          unzip -q zhixue-atlas-source.zip -d .build/site
+          if [ -d site-source ]; then
+            cp -a site-source/. .build/site/
+          fi
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: '24'
           cache: npm
-          cache-dependency-path: site-source/package-lock.json
+          cache-dependency-path: .build/site/package-lock.json
       - name: Install locked dependencies
-        working-directory: site-source
-        run: npm ci
-      - name: Check types and behavior
-        working-directory: site-source
+        working-directory: .build/site
         run: |
+          set -euo pipefail
+          npm ci
+      - name: Check types and behavior
+        working-directory: .build/site
+        run: |
+          set -euo pipefail
           npx tsc --noEmit
           npm test
       - name: Build website
-        working-directory: site-source
-        run: npm run build:pages
+        working-directory: .build/site
+        run: |
+          set -euo pipefail
+          npm run build:pages
+          node --input-type=module <<'NODE'
+          import {writeFileSync} from 'node:fs';
+          writeFileSync('dist-pages/deployment.json', JSON.stringify({
+            commit: process.env.GITHUB_SHA,
+            runId: process.env.GITHUB_RUN_ID,
+            repository: process.env.GITHUB_REPOSITORY,
+          }, null, 2) + '\n');
+          NODE
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
         with:
-          path: site-source/dist-pages
+          path: .build/site/dist-pages
       - name: Publish website
         id: publish
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346
