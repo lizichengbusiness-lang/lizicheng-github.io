@@ -2,7 +2,7 @@ name: Publish ZhiXue Atlas
 on:
   push:
     branches: [main]
-    paths: [zhixue-atlas-source.zip, site-source/**, .github/workflows/pages.yml]
+    paths: [zhixue-atlas-source.zip, site-source/**, source-patches/**, .github/workflows/pages.yml]
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,6 +26,12 @@ jobs:
           set -euo pipefail
           mkdir -p .build/site
           unzip -q zhixue-atlas-source.zip -d .build/site
+          export LC_ALL=C
+          shopt -s nullglob
+          for patch in source-patches/*.patch; do
+            git apply --check --directory=.build/site "$patch"
+            git apply --directory=.build/site "$patch"
+          done
           if [ -d site-source ]; then
             cp -a site-source/. .build/site/
           fi
