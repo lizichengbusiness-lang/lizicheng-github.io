@@ -26,11 +26,21 @@ jobs:
           set -euo pipefail
           mkdir -p .build/site
           unzip -q zhixue-atlas-source.zip -d .build/site
+          python3 - <<'PY'
+          from pathlib import Path
+          source_extensions = {'.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.css', '.json', '.jsonc', '.html', '.md', '.yml', '.yaml'}
+          for path in Path('.build/site').rglob('*'):
+              if path.is_file() and path.suffix in source_extensions:
+                  data = path.read_bytes()
+                  if b'\x00' not in data and b'\r\n' in data:
+                      data.decode('utf-8')
+                      path.write_bytes(data.replace(b'\r\n', b'\n'))
+          PY
           export LC_ALL=C
           shopt -s nullglob
           for patch in source-patches/*.patch; do
-            git apply --check --directory=.build/site "$patch"
-            git apply --directory=.build/site "$patch"
+            git -c core.autocrlf=false apply --check --directory=.build/site "$patch"
+            git -c core.autocrlf=false apply --directory=.build/site "$patch"
           done
           if [ -d site-source ]; then
             cp -a site-source/. .build/site/
