@@ -1,0 +1,23 @@
+diff --git a/github/commerce-worker.ts b/github/commerce-worker.ts
+--- a/github/commerce-worker.ts
++++ b/github/commerce-worker.ts
+@@ -110,7 +110,7 @@
+     if(o.status!=='complete')throw new CommerceError('整本课程尚未完成，请稍后下载。',409);
+     const b=JSON.parse(o.book_json) as CommercialBook,lessons=this.rows<UnitRow>('SELECT * FROM units WHERE order_id=? ORDER BY idx',o.id);
+     const topics=topicsFromContents(parseContents(b.toc)).map((t,i)=>({...t,lesson:JSON.parse(lessons[i].content_json!),sourceType:'AI配套学习课程 · 通用知识讲解'}));
+-    const sid='paid-'+o.id;const videos=await this.recommendations(b.title);
++    const sid='paid-'+o.id;const videos=await this.recommendations(b.title).catch(()=>({courses:[]}));
+     return reply({schemaVersion:3,activeId:sid,spaces:[{id:sid,title:b.title,mode:'book',field:inferField(b.title),level:b.level,kind:'整本配套学习课程',bookPlan:{title:b.title,author:'',edition:'',toc:b.toc,importedOn:new Date(o.created_at).toISOString(),field:inferField(b.title),level:b.level},topics,courses:videos.courses,selected:topics[0]?.id||'',learned:[],saved:[],notes:{}}]});
+    }
+    if(m==='GET'&&!buyer[2])return reply(this.summary(o));
+diff --git a/tests/commerce.test.mjs b/tests/commerce.test.mjs
+--- a/tests/commerce.test.mjs
++++ b/tests/commerce.test.mjs
+@@ -69,3 +69,7 @@
+ const reconstructed=new BookCommerce(vh.ctx,vh.env);await reconstructed.fetch(req('/recommendations','POST',{query:'Python入门'}));assert.equal(videoCalls,firstVideoCalls,'Video cache survives Durable Object reconstruction');
+ assert.equal((await result(vh,'/recommendations','POST',{query:''})).status,400);
+ console.log('Book video cache persistence and invalid-query checks passed');
++
++const longTitleBook={title:'书'.repeat(170),toc:'第一章 内容\n1.1 概念'};const longOrder=(await result(h,'/orders','POST',longTitleBook)).data;
++await result(h,'/admin/orders/'+longOrder.order.id+'/approve','POST',{...approval,reference:'LONGTITLE123'},adminKey);await h.store.alarm();
++const longDownload=await result(h,'/orders/'+longOrder.order.id+'/download','GET',undefined,longOrder.accessToken);assert.equal(longDownload.status,200,'Video lookup failure cannot prevent paid content download');
