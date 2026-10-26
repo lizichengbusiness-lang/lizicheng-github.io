@@ -1,0 +1,82 @@
+diff --git a/github/commerce-worker.ts b/github/commerce-worker.ts
+--- a/github/commerce-worker.ts
++++ b/github/commerce-worker.ts
+@@ -23,6 +23,28 @@
+   ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)`);
+  }
+  private rows<T>(sql:string,...bindings:(string|number|null)[]):T[]{return this.ctx.storage.sql.exec(sql,...bindings).toArray() as T[];}
++ private credentialCheck:Promise<boolean>|null=null;
++ private async credentialsReady():Promise<boolean>{
++  if(!ready(this.env))return false;
++  const fingerprint=await sha256(this.env.DEEPSEEK_API_KEY!);
++  const saved=this.rows<{value:string}>("SELECT value FROM settings WHERE key='credentials_ready'")[0];
++  if(saved){try{const cache=JSON.parse(saved.value);if(cache.fingerprint===fingerprint&&cache.until>Date.now())return cache.valid===true;}catch{/* Recheck malformed cached status. */}}
++  if(this.credentialCheck)return this.credentialCheck;
++  this.credentialCheck=(async()=>{
++   let valid=false;
++   try{
++    const transport=this.env.MODEL_FETCH||fetch,headers={Authorization:'Bearer '+this.env.DEEPSEEK_API_KEY};
++    const [models,balance]=await Promise.all([
++     transport('https://api.deepseek.com/models',{headers,signal:AbortSignal.timeout(10000)}),
++     transport('https://api.deepseek.com/user/balance',{headers,signal:AbortSignal.timeout(10000)}),
++    ]);
++    if(models.ok&&balance.ok){const m=await models.json() as {data?:{id?:string}[]};const b=await balance.json() as {is_available?:boolean};valid=Array.isArray(m.data)&&m.data.some(x=>x.id==='deepseek-flash')&&b.is_available===true;}
++   }catch{/* Never expose credentials, response bodies or account balances. */}
++   this.ctx.storage.sql.exec("INSERT OR REPLACE INTO settings VALUES('credentials_ready',?)",JSON.stringify({fingerprint,valid,until:Date.now()+(valid?900000:60000)}));
++   return valid;
++  })();
++  try{return await this.credentialCheck;}finally{this.credentialCheck=null;}
++ }
+  private order(id:string){const o=this.rows<OrderRow>('SELECT * FROM orders WHERE id=?',id)[0];if(!o)throw new CommerceError('订单不存在或访问凭证不正确。',404);return o;}
+  private async authorizeOrder(r:Request,id:string){const o=this.order(id);if(!await constantTimeEqual(await sha256(bearer(r)),o.token_hash))throw new CommerceError('订单不存在或访问凭证不正确。',404);return o;}
+  private async admin(r:Request){
+@@ -42,10 +64,10 @@
+  }
+  async fetch(r:Request):Promise<Response>{try{
+   const p=new URL(r.url).pathname,m=r.method;
+-  if(p==='/config'&&m==='GET')return reply({acceptingOrders:ready(this.env)&&!this.rows<{value:string}>("SELECT value FROM settings WHERE key='paused'")[0]?.value.includes('true'),priceFen:990,paymentImage:'/payments/wechat.jpg',merchantName:'春花满目望君秋',manualPayment:true,preview:this.env.COMMERCE_PREVIEW==='1'});
++  if(p==='/config'&&m==='GET')return reply({acceptingOrders:await this.credentialsReady()&&!this.rows<{value:string}>("SELECT value FROM settings WHERE key='paused'")[0]?.value.includes('true'),priceFen:990,paymentImage:'/payments/wechat.jpg',merchantName:'春花满目望君秋',manualPayment:true,preview:this.env.COMMERCE_PREVIEW==='1'});
+   if(p==='/quote'&&m==='POST'){await this.rate('quote:'+r.headers.get('X-Client-Key'),60,3600000);return reply(commercialQuote(readBook(await jsonBody(r))));}
+   if(p==='/orders'&&m==='POST'){
+-   if(!ready(this.env)||this.rows<{value:string}>("SELECT value FROM settings WHERE key='paused'")[0]?.value==='true')throw new CommerceError('当前暂不接受新订单，请稍后再来。',503);
++   if(!await this.credentialsReady()||this.rows<{value:string}>("SELECT value FROM settings WHERE key='paused'")[0]?.value==='true')throw new CommerceError('当前暂不接受新订单，请稍后再来。',503);
+    await this.rate('create:'+r.headers.get('X-Client-Key'),5,86400000);
+    if(this.rows<{n:number}>("SELECT count(*) AS n FROM orders WHERE status IN ('pending','submitted')")[0].n>=500)throw new CommerceError('待处理订单较多，暂不接受新订单。',503);
+    const body=await jsonBody(r),book=readBook(body),quote=commercialQuote(book);
+diff --git a/tests/commerce.test.mjs b/tests/commerce.test.mjs
+--- a/tests/commerce.test.mjs
++++ b/tests/commerce.test.mjs
+@@ -9,7 +9,7 @@
+  const db=new DatabaseSync(':memory:');let alarm=null;
+  const storage={sql:{exec(sql,...args){const stmt=db.prepare(sql);const rows=stmt.all(...args);return {toArray:()=>rows};}},transactionSync(fn){db.exec('BEGIN IMMEDIATE');try{const out=fn();db.exec('COMMIT');return out;}catch(e){db.exec('ROLLBACK');throw e;}},async setAlarm(t){alarm=t;},async getAlarm(){return alarm;}};
+  const ctx={storage};
+- const env={DEEPSEEK_API_KEY:'test-server-key-never-expose',COMMERCE_ADMIN_KEY:adminKey,MODEL_FETCH:async(url,init)=>{modelCalls++;assert.equal(url,'https://api.deepseek.com/chat/completions');const body=JSON.parse(init.body);assert.equal(body.thinking.type,'disabled');assert.equal(body.max_tokens,7000);return Response.json({usage:{prompt_tokens:1000,completion_tokens:2000},choices:[{finish_reason:'stop',message:{content:JSON.stringify({lesson:validLesson})}}]});},...options};
++ const env={DEEPSEEK_API_KEY:'test-server-key-never-expose',COMMERCE_ADMIN_KEY:adminKey,MODEL_FETCH:async(url,init)=>{if(url.endsWith('/models'))return Response.json({data:[{id:'deepseek-flash'}]});if(url.endsWith('/user/balance'))return Response.json({is_available:true});modelCalls++;assert.equal(url,'https://api.deepseek.com/chat/completions');const body=JSON.parse(init.body);assert.equal(body.thinking.type,'disabled');assert.equal(body.max_tokens,7000);return Response.json({usage:{prompt_tokens:1000,completion_tokens:2000},choices:[{finish_reason:'stop',message:{content:JSON.stringify({lesson:validLesson})}}]});},...options};
+  return {store:new BookCommerce(ctx,env),ctx,env,db,get alarm(){return alarm;}};
+ }
+ function req(path,method='GET',body,token=''){return new Request('https://internal'+path,{method,headers:{'Content-Type':'application/json','X-Client-Key':Math.random().toString(36),...(token?{Authorization:'Bearer '+token}:{})},...(body!==undefined?{body:JSON.stringify(body)}:{})});}
+@@ -54,10 +54,11 @@
+ expensive.db.prepare('UPDATE orders SET spent_micro=? WHERE id=?').run(COMMERCE_POLICY.budgetMicroCny-1,eo.order.id);
+ await expensive.store.alarm();assert.equal(modelCalls,1,'Per-order budget enforced before provider call');
+ let uncertainCalls=0;
+-const uncertain=harness({MODEL_FETCH:async()=>{uncertainCalls++;throw new Error('network');}});const uo=(await result(uncertain,'/orders','POST',book)).data;
++const uncertain=harness({MODEL_FETCH:async(url)=>{if(url.endsWith('/models'))return Response.json({data:[{id:'deepseek-flash'}]});if(url.endsWith('/user/balance'))return Response.json({is_available:true});uncertainCalls++;throw new Error('network');}});const uo=(await result(uncertain,'/orders','POST',book)).data;
+ await result(uncertain,'/admin/orders/'+uo.order.id+'/approve','POST',{...approval,reference:'UNCERTAIN123'},adminKey);
+ await uncertain.store.alarm();await uncertain.store.alarm();await uncertain.store.alarm();
+ assert.equal(uncertainCalls,2,'A failed model request has a finite retry limit');
+ const ur=uncertain.db.prepare('SELECT spent_micro,status FROM orders WHERE id=?').get(uo.order.id);
+ assert.equal(ur.spent_micro,callReservation(readBook(book),0)*2,'Uncertain provider requests keep their full reservation');assert.equal(ur.status,'paused');
+-console.log(JSON.stringify({pricing:'passed',paymentClaimCannotUnlock:'passed',adminAuthorization:'passed',paymentIdempotency:'passed',buyerIsolation:'passed',persistence:'passed',wholeBookExport:'passed',dailyBudget:'passed',orderBudget:'passed',boundedRetry:'passed',secretsNotExposed:'passed',providerCalls:'mocked only'}));
++const invalid=harness({MODEL_FETCH:async()=>new Response(null,{status:401})});assert.equal((await result(invalid,'/config')).data.acceptingOrders,false);assert.equal((await result(invalid,'/orders','POST',book)).status,503);
++console.log(JSON.stringify({credentialValidation:'passed',pricing:'passed',paymentClaimCannotUnlock:'passed',adminAuthorization:'passed',paymentIdempotency:'passed',buyerIsolation:'passed',persistence:'passed',wholeBookExport:'passed',dailyBudget:'passed',orderBudget:'passed',boundedRetry:'passed',secretsNotExposed:'passed',providerCalls:'mocked only'}));
+diff --git a/github/commerce-assets/app.js b/github/commerce-assets/app.js
+--- a/github/commerce-assets/app.js
++++ b/github/commerce-assets/app.js
+@@ -35,6 +35,6 @@
+ document.addEventListener('visibilitychange',()=>{if(document.hidden)clearTimeout(poller);else if(current)openOrder(current);});
+ async function init(){
+  try{if(location.hash.startsWith('#draft=')){const decoded=decodeURIComponent(escape(atob(location.hash.slice(7).replace(/-/g,'+').replace(/_/g,'/'))));const d=JSON.parse(decoded);if(typeof d.title==='string')$('title').value=d.title.slice(0,200);if(typeof d.toc==='string')$('toc').value=d.toc.slice(0,20000);history.replaceState(null,'',location.pathname);}}catch{notice('预填目录未能读取，请在下方重新填写。',true);}
+- renderRecent();try{config=await api('/config');if(config.preview)$('preview-banner').hidden=false;else if(!config.acceptingOrders)notice('当前可先查看报价。商家正在完成收款配置，暂不接受付款。');}catch(error){notice(error.message,true);}
++ renderRecent();try{config=await api('/config');if(config.preview)$('preview-banner').hidden=false;else if(!config.acceptingOrders)notice('当前可先查看报价。商家正在完成收款配置，暂不接受付款。');if($('create-order')){$('create-order').textContent=config.acceptingOrders?'创建 ¥9.90 付款订单':'收款尚未开放，暂不能创建订单';$('create-order').disabled=!config.acceptingOrders||!$('accept-scope').checked;}}catch(error){notice(error.message,true);}
+ }
+ init();
