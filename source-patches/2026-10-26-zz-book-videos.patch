@@ -1,0 +1,513 @@
+diff --git a/app/page.tsx b/app/page.tsx
+--- a/app/page.tsx
++++ b/app/page.tsx
+@@ -2,7 +2,7 @@
+ import {useEffect,useRef,useState,type SetStateAction} from "react";
+ import {BookOpen,Search,Network,Play,Settings,Upload,ChevronRight,ChevronDown,Check,ExternalLink,X,Bookmark,Download,Plus,ArrowUpRight,FlaskConical,LoaderCircle,FileText,Link2,CheckCircle2,Info,Sparkles,Menu,Layers} from "lucide-react";
+ import {projectReferences,type Course,type Topic} from "@/lib/learning-data";
+-import {downloadJson,matchesTopic,parseCourseUrl,parseJsonResponse,rankCourses,searchLinks,validateTopics,type ModelSettings} from "@/lib/learning-utils";
++import {downloadJson,matchesTopic,parseCourseUrl,parseJsonResponse,validateTopics,type ModelSettings} from "@/lib/learning-utils";
+ import BackgroundToggle from '@/components/BackgroundToggle';
+ import KnowledgeAtlas from '@/components/KnowledgeAtlas';
+ import BeginnerLesson from '@/components/BeginnerLesson';
+@@ -35,11 +35,11 @@
+  const [settings,setSettings]=useState<ModelSettings>(defaultSettings);
+  const [bookNotice,setBookNotice]=useState<{spaceId:string;title:string;units:number;chapters:number;persisted:boolean;error:string;updated:boolean}|null>(null);
+  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[returnToImport,setReturnToImport]=useState(false);
+- const [courseQuery,setCourseQuery]=useState(defaultTitle),[platform,setPlatform]=useState('全部'),[live,setLive]=useState<Course[]>([]),[statuses,setStatuses]=useState<Record<string,string>>({}),[searching,setSearching]=useState(false);
++ const [live,setLive]=useState<Course[]>([]),[statuses,setStatuses]=useState<Record<string,string>>({}),[searching,setSearching]=useState(false);
+  const [addTitle,setAddTitle]=useState(''),[addUrl,setAddUrl]=useState(''),[addSchool,setAddSchool]=useState(''),[question,setQuestion]=useState(''),[answer,setAnswer]=useState(''),[answering,setAnswering]=useState(false);
+  const job=useRef<AbortController|null>(null),courseJob=useRef<AbortController|null>(null),answerJob=useRef<AbortController|null>(null),timer=useRef<ReturnType<typeof setTimeout>|null>(null),fileInput=useRef<HTMLInputElement>(null);
+  function notify(s:string){setToast(s);if(timer.current)clearTimeout(timer.current);timer.current=setTimeout(()=>setToast(''),5000);}
+- useEffect(()=>{job.current?.abort();courseJob.current?.abort();answerJob.current?.abort();job.current=null;courseJob.current=null;answerJob.current=null;setBusy(false);setGeneratingLesson(false);setSearching(false);setAnswering(false);setQuery('');setLive([]);setStatuses({});setCourseQuery(title);setPlatform('全部');setOnlySaved(false);setBookDraft(null);setError('');setAnswer('');setQuestion('');},[space.id]);
++ useEffect(()=>{job.current?.abort();courseJob.current?.abort();answerJob.current?.abort();job.current=null;courseJob.current=null;answerJob.current=null;setBusy(false);setGeneratingLesson(false);setSearching(false);setAnswering(false);setQuery('');setLive([]);setStatuses({});setOnlySaved(false);setBookDraft(null);setError('');setAnswer('');setQuestion('');},[space.id]);
+  useEffect(()=>{answerJob.current?.abort();answerJob.current=null;setAnswering(false);setAnswer('');setQuestion('');},[selected]);
+  useEffect(()=>()=>{job.current?.abort();courseJob.current?.abort();answerJob.current?.abort();if(timer.current)clearTimeout(timer.current);},[]);
+  useEffect(()=>{if(!modal)return;const h=(e:KeyboardEvent)=>{if(e.key==='Escape'&&!busy)setModal(null);};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h);},[modal,busy]);
+@@ -49,7 +49,6 @@
+  const filtered=topics.filter(t=>(query.trim()===title||matchesTopic(t,query))&&(!onlySaved||saved.includes(t.id)));
+  const groups=[...new Set(filtered.map(t=>t.group))];
+  const count=learned.filter(id=>topics.some(t=>t.id===id)).length,percent=topics.length?Math.round(count/topics.length*100):0;
+- const links=searchLinks(courseQuery||title);
+  const references=[...new Map(topics.flatMap(t=>(t.lesson||(t.sourceType==='课程主题示例'?beginnerLesson(t.id):undefined))?.references||[]).filter(r=>/^https:\/\//.test(r.url)).map(r=>[r.url,r])).values()];
+  function select(id:string,reading=false){setSelected(id);setMobile(false);if(reading){setView('learn');requestAnimationFrame(()=>document.querySelector('.reading-panel')?.scrollIntoView({block:'start',behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'}));}}
+  function open(m:Modal){setError('');setModal(m);setMobile(false);}
+@@ -122,38 +121,48 @@
+   }catch(e){if(!controller.signal.aborted)notify(e instanceof Error?e.message:'编写失败，原有讲解已保留');}finally{if(job.current===controller){setGeneratingLesson(false);job.current=null;}}
+  }
+  async function ask(){if(!topic||!question.trim())return;if(!settings.apiKey){open('settings');return;}const controller=new AbortController();answerJob.current?.abort();answerJob.current=controller;setAnswering(true);try{const response=await model('explain',`科目：${title}\n学科：${field}\n学习基础：${level}\n知识点：${topic.title}\n资料：${topic.lesson?JSON.stringify(topic.lesson):topic.explanation}\n问题：${question}`,controller.signal);if(!controller.signal.aborted)setAnswer(response);}catch(e){if(!controller.signal.aborted)setAnswer(e instanceof Error?e.message:'请求失败');}finally{if(answerJob.current===controller){setAnswering(false);answerJob.current=null;}}}
+- async function findCourses(){if(!courseQuery.trim())return;const controller=new AbortController();courseJob.current?.abort();courseJob.current=controller;setSearching(true);setStatuses({});try{const r=await fetch(apiUrl('/api/courses',settings.backendUrl),{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({query:courseQuery,youtubeKey:settings.youtubeKey})});const d=await r.json() as {error?:string;courses?:Course[];statuses?:Record<string,string>};if(!r.ok)throw new Error(d.error||'搜索失败');if(!controller.signal.aborted){setLive(d.courses||[]);setStatuses(d.statuses||{});}}catch(e){if(!controller.signal.aborted)setStatuses({搜索:e instanceof Error?e.message:'网络搜索失败，可使用原站搜索'});}finally{if(courseJob.current===controller){setSearching(false);courseJob.current=null;}}}
++ useEffect(()=>{
++  if(!ready)return;
++  const controller=new AbortController();courseJob.current?.abort();courseJob.current=controller;
++  setLive([]);setStatuses({});setSearching(true);
++  const backend=settings.backendUrl?.trim()||'https://zhixue-learning-api.zhixue-lizicheng.workers.dev';
++  (async()=>{try{
++   const r=await fetch(apiUrl('/api/courses',backend),{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({query:title})});
++   const d=await r.json() as {error?:string;courses?:Course[];statuses?:Record<string,string>};
++   if(!r.ok)throw new Error(d.error||'推荐暂时不可用');
++   if(!controller.signal.aborted){setLive((d.courses||[]).slice(0,2));setStatuses(d.statuses||{});}
++  }catch{if(!controller.signal.aborted)setStatuses({推荐:'暂未取得本书的视频链接，请稍后重新打开。'});}
++  finally{if(courseJob.current===controller){setSearching(false);courseJob.current=null;}}})();
++  return()=>controller.abort();
++ },[ready,space.id,title,settings.backendUrl]);
+  function addCourse(){try{const parsed=parseCourseUrl(addUrl);if(!addTitle.trim())throw new Error('请填写课程名称');const c={...parsed,id:crypto.randomUUID(),title:addTitle.trim(),school:addSchool.trim()||'用户收集',teacher:'待核对',language:parsed.platform==='B站'?'中文':'待核对',note:'手动收录的课程，字幕、内容和版本尚未核实。',status:'手动收录 · 待核对',topics:[]} as Course;setCourses(v=>mergeCourses(v,[c]));setAddTitle('');setAddUrl('');setAddSchool('');setModal(null);notify('课程入口已收录到当前项目');}catch(e){setError(e instanceof Error?e.message:'链接无效');}}
+- const visibleCourses=courses.filter(c=>(platform==='全部'||c.platform===platform)&&(!courseQuery||courseQuery===title||[c.title,c.school,c.note,...c.topics].join(' ').toLowerCase().includes(courseQuery.toLowerCase())));
++
+  return <div className="app-shell" data-field={field}><div className="science-backdrop" aria-hidden="true"/>
+-  <aside className={`library-rail ${mobile?"rail-open":""}`}><a href="#main" className="brand"><span className="brand-mark"><Network size={23}/></span><strong>知学图谱<span>把知识连成理解</span></strong></a><div className="rail-section">学习空间</div><nav aria-label="主要导航"><button className={view==="learn"&&!onlySaved?"active":""} onClick={()=>{setView("learn");setOnlySaved(false);setMobile(false);}}><BookOpen size={18}/>知识点学习</button><button className={view==="graph"?"active":""} onClick={()=>{setView("graph");setMobile(false);}}><Network size={18}/>知识图谱</button><button className={view==="courses"?"active":""} onClick={()=>{setView("courses");setMobile(false);}}><Play size={18}/>可供选择的课程<span className="nav-count">{courses.length}</span></button><button className={onlySaved?"active":""} onClick={()=>{setOnlySaved(v=>!v);setView("learn");setMobile(false);}}><Bookmark size={18}/>我的收藏<span className="nav-count">{saved.length}</span></button></nav>
++  <aside className={`library-rail ${mobile?"rail-open":""}`}><a href="#main" className="brand"><span className="brand-mark"><Network size={23}/></span><strong>知学图谱<span>把知识连成理解</span></strong></a><div className="rail-section">学习空间</div><nav aria-label="主要导航"><button className={view==="learn"&&!onlySaved?"active":""} onClick={()=>{setView("learn");setOnlySaved(false);setMobile(false);}}><BookOpen size={18}/>知识点学习</button><button className={view==="graph"?"active":""} onClick={()=>{setView("graph");setMobile(false);}}><Network size={18}/>知识图谱</button><button className={view==="courses"?"active":""} onClick={()=>{setView("courses");setMobile(false);}}><Play size={18}/>推荐网课<span className="nav-count">{live.length}</span></button><button className={onlySaved?"active":""} onClick={()=>{setOnlySaved(v=>!v);setView("learn");setMobile(false);}}><Bookmark size={18}/>我的收藏<span className="nav-count">{saved.length}</span></button></nav>
+    <div className="library-shortcuts"><button onClick={()=>open('library')}><Layers size={16}/>书架与科目<span>{library.spaces.length} 个项目</span><Plus size={15}/></button><select aria-label="切换学习项目" disabled={!ready} value={space.id} onChange={e=>switchSpace(e.target.value)}>{library.spaces.map(s=><option key={s.id} value={s.id}>{s.title}</option>)}</select></div><div className="rail-section book-section">当前项目</div><div className="mini-book"><div className="book-spine"/><span><small>学习工作台</small><strong>{title}</strong><em>{bookPlan?[bookPlan.author,bookPlan.edition].filter(Boolean).join(' · ')||fieldLabel:space.id==='sample-biochemistry'?'马海田 · 第六版':fieldLabel}</em></span></div><div className="rail-progress"><div><span>主题学习进度</span><b>{percent}%</b></div><div className="progress-track"><i style={{width:`${percent}%`}}/></div><small>{count} / {topics.length} 个主题已标记</small></div>
+-   <div className="rail-bottom"><button onClick={openPaidBook}><Sparkles size={17}/>¥9.9 整本生成</button><button onClick={()=>startBook("add")}><Upload size={17}/>用封面和目录建课</button><button onClick={()=>open("settings")}><Settings size={17}/>模型与搜索设置</button><button onClick={backup}><Download size={17}/>备份整个书架</button><button onClick={()=>open("sources")}><Link2 size={17}/>来源与开源参考</button><div className="local-note"><span/>进度保存在当前浏览器</div></div></aside>
++   <div className="rail-bottom"><button onClick={openPaidBook}><Sparkles size={17}/>¥9.9 整本生成</button><button onClick={()=>startBook("add")}><Upload size={17}/>用封面和目录建课</button><button onClick={()=>open("settings")}><Settings size={17}/>模型设置</button><button onClick={backup}><Download size={17}/>备份整个书架</button><button onClick={()=>open("sources")}><Link2 size={17}/>来源与开源参考</button><div className="local-note"><span/>进度保存在当前浏览器</div></div></aside>
+   {mobile&&<button className="rail-scrim" aria-label="关闭导航" onClick={()=>setMobile(false)}/>}
+-  <main id="main" className="workspace"><header className="topbar"><div className="breadcrumb"><button className="mobile-menu icon-button" aria-label="打开导航" onClick={()=>setMobile(!mobile)}><Menu size={21}/></button><span>我的学习空间</span><ChevronRight size={14}/><strong>{view==="courses"?"可供选择的课程":view==="graph"?"知识图谱":"知识点学习"}</strong></div><div className="topbar-actions"><BackgroundToggle/><button className="quiet-button" onClick={()=>open("settings")}><span className={`connection-dot ${modelReady?"connected":""}`}/>{modelReady?"模型配置已填写":"配置AI讲解"}<Settings size={15}/></button></div></header>
++  <main id="main" className="workspace"><header className="topbar"><div className="breadcrumb"><button className="mobile-menu icon-button" aria-label="打开导航" onClick={()=>setMobile(!mobile)}><Menu size={21}/></button><span>我的学习空间</span><ChevronRight size={14}/><strong>{view==="courses"?"推荐网课":view==="graph"?"知识图谱":"知识点学习"}</strong></div><div className="topbar-actions"><BackgroundToggle/><button className="quiet-button" onClick={()=>open("settings")}><span className={`connection-dot ${modelReady?"connected":""}`}/>{modelReady?"模型配置已填写":"配置AI讲解"}<Settings size={15}/></button></div></header>
+    <section className="book-header illustrated-book-header"><div className="book-identity"><div className="book-kicker"><FlaskConical size={15}/>{fieldLabel}学习工作台</div><h1>{title}<span>{bookPlan?.edition||(space.id==='sample-biochemistry'?'第六版':space.mode==='book'?'教材':'科目')}</span></h1><p>{bookPlan?[bookPlan.author,bookPlan.edition,'根据确认目录学习'].filter(Boolean).join(' · '):space.id==='sample-biochemistry'?'马海田 主编　中国农业出版社　ISBN 9787109305960':level+' · 从概念、实例到独立理解'}</p></div><figure className="book-art">{field==='life-science'?<img src={assetUrl("/images/biochemistry-hero.png")} alt="蛋白质折叠、分子与细胞膜主题插画" width={1774} height={887} decoding="async"/>:<SubjectArtwork field={field}/>}<figcaption>{fieldLabel}主题图</figcaption></figure><button className="import-button" onClick={()=>open("library")}><Plus size={17}/>书架 / 新增</button></section>
+    <form className="global-search" onSubmit={e=>{e.preventDefault();if(query.trim()&&filtered.length)select(filtered[0].id,true);else generate();}}><Search size={20}/><input aria-label="搜索科目、书籍或知识点" placeholder="搜索当前知识点，或输入新的书名 / 科目…" value={query} onChange={e=>setQuery(e.target.value)}/>{query&&<button type="button" className="icon-button" aria-label="清除搜索" onClick={()=>setQuery("")}><X size={16}/></button>}<button className="search-submit" disabled={busy}>{busy?"生成中…":"搜索"}</button></form>
+    <div className="source-banner"><Info size={16}/><span>{source?'已导入「'+source.name+'」，保留的历史资料可继续核对。':bookPlan?'已按确认目录建立学习路线，可逐节编写入门讲解。':topics.length?'当前为通用学习路线，可新建更多书籍或科目。':'项目已建立：填写目录或配置模型，即可建立学习路线。'}</span><button onClick={()=>open('library')}>管理书架<ChevronRight size={14}/></button></div>
+    {storageError&&<div role="alert" className="library-error-hint">{storageError}<button className="text-button" onClick={backup}>备份全部</button></div>}
+    {bookNotice&&bookNotice.spaceId===space.id&&<section id="book-save-feedback" className={`book-save-notice ${bookNotice.persisted?'':'warning'}`} role={bookNotice.persisted?'status':'alert'} aria-live="polite"><CheckCircle2 size={20}/><div><strong>{bookNotice.persisted?`《${bookNotice.title}》${bookNotice.updated?'目录更新成功':'上架成功'}`:'已在本页建立，但未能保存到本机'}</strong><p>{bookNotice.chapters} 个章节 / 分组，{bookNotice.units} 个学习单元。{bookNotice.persisted?'书籍和目录已保存在当前浏览器，重新打开页面可继续学习。':bookNotice.error+' 刷新或关闭页面可能丢失本次修改，请立即备份。'}</p><p>详细讲解需另行生成；本次上架不代表已经生成整本书的讲解。</p><div className="book-save-actions">{!bookNotice.persisted&&<button onClick={backup}>立即备份学习库</button>}<button onClick={()=>setView('graph')}>查看思维导图</button><button onClick={()=>setView('learn')}>开始学习</button></div></div><button className="icon-button" aria-label="关闭上架反馈" onClick={()=>setBookNotice(null)}><X size={17}/></button></section>}
+-   <div className="view-tabs" role="tablist" aria-label="学习视图">{([["learn",BookOpen,"知识点"],["graph",Network,"知识图谱"],["courses",Play,"可供选择的课程"]] as const).map(([id,Icon,label])=><button key={id} role="tab" aria-selected={view===id} className={view===id?"selected":""} onClick={()=>setView(id)}><Icon size={17}/>{label}</button>)}<span>{kind}</span></div>
++   <div className="view-tabs" role="tablist" aria-label="学习视图">{([["learn",BookOpen,"知识点"],["graph",Network,"知识图谱"],["courses",Play,"推荐网课"]] as const).map(([id,Icon,label])=><button key={id} role="tab" aria-selected={view===id} className={view===id?"selected":""} onClick={()=>setView(id)}><Icon size={17}/>{label}</button>)}<span>{kind}</span></div>
+    {view==="learn"&&topics.length>0&&<div className="learning-layout"><aside className="topic-panel"><div className="panel-title"><span>{onlySaved?"收藏的知识点":"主题目录"}</span><small>{filtered.length}项</small></div><p className="panel-hint">{bookPlan?"按已确认目录组织，讲解逐节展开":"按学习模块整理 · 非教材原目录"}</p><select className="mobile-topic-select" aria-label="选择知识点" value={topic?.id||""} onChange={e=>select(e.target.value)}>{filtered.map(t=><option key={t.id} value={t.id}>{t.title}</option>)}</select><div className="topic-scroll">{groups.map(g=><details key={g} open><summary><ChevronDown size={14}/>{g}<small>{filtered.filter(t=>t.group===g).length}</small></summary>{filtered.filter(t=>t.group===g).map(t=><button key={t.id} className={`topic-link ${t.id===topic?.id?"chosen":""}`} onClick={()=>select(t.id)}><span className={`topic-check ${learned.includes(t.id)?"done":""}`}>{learned.includes(t.id)&&<Check size={10}/>}</span><span>{t.title}</span>{t.id===topic?.id&&<ChevronRight size={13}/>}</button>)}</details>)}</div>{!filtered.length&&<div className="empty-inline">{onlySaved?"还没有收藏的知识点。点击讲解右上角的书签即可收藏。":"没有匹配的知识点。"}{!onlySaved&&query.trim()&&<button className="text-button" disabled={busy} onClick={generate}>建立这个科目的学习项目</button>}<button className="text-button" onClick={()=>startBook("add")}>上传封面和目录</button></div>}</aside>
+     {filtered.length>0&&topic&&<article className="reading-panel"><div className="article-top"><span className="category-tag">{topic.group}</span><button className={`bookmark-button ${saved.includes(topic.id)?"saved":""}`} aria-label={saved.includes(topic.id)?"取消收藏":"收藏知识点"} onClick={()=>setSaved(v=>v.includes(topic.id)?v.filter(x=>x!==topic.id):[...v,topic.id])}><Bookmark size={19} fill={saved.includes(topic.id)?"currentColor":"none"}/></button></div><h2>{topic.title}</h2><p className="topic-brief">{topic.brief}</p><div className="article-source"><FileText size={13}/>{topic.sourceType||kind}<span>从零开始学习</span></div>{topic.prerequisites.length>0&&<div className="prerequisites before-lesson"><h3>没有学过这些？先从这里补基础</h3><div>{topic.prerequisites.map(id=>{const t=topics.find(x=>x.id===id);return t?<button key={id} onClick={()=>select(id)}>{t.title}<ArrowUpRight size={12}/></button>:null;})}</div></div>}
+      <BeginnerLesson topic={topic} onGenerate={writeLesson} generating={generatingLesson}/>
+      {topic.misconception&&<div className="misconception"><strong><Info size={16}/>容易混淆</strong><p>{topic.misconception}</p></div>}
+      <div className="learning-action"><button className={learned.includes(topic.id)?"learned-button":"primary-button"} onClick={()=>setLearned(v=>v.includes(topic.id)?v.filter(x=>x!==topic.id):[...v,topic.id])}><CheckCircle2 size={17}/>{learned.includes(topic.id)?"已标记掌握 · 点击撤销":"我理解了，标记掌握"}</button><button className="quiet-button" onClick={()=>setView("graph")}><Network size={16}/>在图谱中看关系</button></div><section className="notes-section"><h3>留下一点自己的理解</h3><textarea aria-label="知识点学习笔记" placeholder="用自己的话解释，或者记下还没弄懂的地方…" value={notes[topic.id]||""} onChange={e=>setNotes(v=>({...v,[topic.id]:e.target.value}))}/><small>自动保存在当前浏览器，可随学习备份导出。</small></section>
+      <section className="ask-section"><h3><Sparkles size={17}/>继续问一问</h3><div className="ask-input"><input aria-label="向AI提问" placeholder="这个概念是什么意思？能再举一个例子吗？" value={question} onChange={e=>setQuestion(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")ask();}}/><button disabled={answering||!question.trim()} onClick={ask}>{answering?<LoaderCircle className="spin" size={17}/>:"讲给我听"}</button></div>{!settings.apiKey&&<small>需在模型设置中配置你自己的API服务。</small>}{answer&&<div className="ai-answer"><LessonText text={answer}/><small>AI补充讲解，请结合公开资料核对。</small></div>}</section></article>}
+-    <aside className={`course-sidebar ${filtered.length?"":"no-matches"}`}><div className="panel-title"><span><Play size={16}/>相关网课</span><button aria-label="查看所有课程" onClick={()=>setView("courses")}><ArrowUpRight size={17}/></button></div><p className="panel-hint">当前项目收录的课程 · 优先中文</p>{!courses.length&&<div className="empty-inline">当前项目还未收录课程，可以到B站或YouTube搜索并保存入口。</div>}{rankCourses(courses,topic).slice(0,3).map(c=><CourseCard key={c.id} field={field} course={c} compact onPlay={()=>play(c)}/>)}<button className="more-courses" onClick={()=>{setCourseQuery(title+' '+(topic?.title||''));setView("courses");}}>搜索这个知识点的讲解<Search size={15}/></button><div className="resource-note"><Link2 size={16}/><p>网课只提供学习入口。点击跳转原站，按平台页面选集观看。</p></div></aside></div>}
++    <aside className={`course-sidebar ${filtered.length?"":"no-matches"}`}><div className="panel-title"><span><Play size={16}/>本书推荐网课</span><button aria-label="查看推荐网课" onClick={()=>setView("courses")}><ArrowUpRight size={17}/></button></div><p className="panel-hint">自动匹配当前书籍 · 点击原站观看</p>{searching&&<div className="empty-inline"><LoaderCircle className="spin" size={16}/>正在匹配视频链接…</div>}{!searching&&!live.length&&<div className="empty-inline">暂未找到可核实的相关视频。</div>}{live.map(c=><CourseCard key={c.id} field={field} course={c} compact onPlay={()=>play(c)}/>)}<button className="more-courses" onClick={()=>setView("courses")}>查看本书推荐<ArrowUpRight size={15}/></button><div className="resource-note"><Link2 size={16}/><p>同主题补充课程不保证对应教材版次；播放以原站为准。</p></div></aside></div>}
+    {view==="graph"&&topics.length>0&&<section className="graph-section"><div className="section-heading"><div><h2>沿着思维导图，一层一层学</h2><p>点击章节或知识点，自动放大它与关联知识，隐藏其他分支。</p></div></div><KnowledgeAtlas key={space.id+'-'+(bookPlan?.importedOn||title)} topics={topics} selected={selected} onSelect={setSelected} onRead={id=>select(id,true)} learned={learned} bookTitle={title} fromContents={!!bookPlan}/></section>}
+-   {view==="courses"&&<section className="courses-section"><div className="section-heading"><div><h2>找到适合你的那种讲法</h2><p>为「{title}」收集B站与YouTube课程入口。</p></div><button className="primary-button" onClick={()=>open("course")}><Plus size={17}/>收录课程</button></div><div className="course-search"><Search size={18}/><input aria-label="搜索网课" placeholder="搜索课程、学校或知识点…" value={courseQuery} onChange={e=>setCourseQuery(e.target.value)}/><button disabled={searching} onClick={findCourses}>{searching?<LoaderCircle className="spin" size={17}/>:"联网找课"}</button></div><div className="course-tools"><div className="filter-pills">{["全部","B站","YouTube"].map(p=><button key={p} className={platform===p?"on":""} onClick={()=>setPlatform(p)}>{p}</button>)}</div><div className="external-search"><a href={links.bilibili} target="_blank" rel="noreferrer">B站原站搜索<ExternalLink size={12}/></a><a href={links.youtube} target="_blank" rel="noreferrer">YouTube原站搜索<ExternalLink size={12}/></a></div></div>{Object.keys(statuses).length>0&&<div className="search-status">{Object.entries(statuses).map(([p,s])=><p key={p}><strong>{p}：</strong>{s}</p>)}</div>}
+-    <h3 className="list-label">已收录课程 <span>{visibleCourses.length}</span></h3><div className="course-grid">{visibleCourses.map(c=><CourseCard key={c.id} field={field} course={c} onPlay={()=>play(c)}/>)}</div>{!visibleCourses.length&&<div className="empty-state"><Search size={26}/><h3>还没有匹配的可选课程</h3><p>按当前科目搜索，找到合适课程后即可收录。</p><div className="course-empty-actions"><a href={links.bilibili} target="_blank" rel="noreferrer">去B站找课<ExternalLink size={12}/></a><a href={links.youtube} target="_blank" rel="noreferrer">去YouTube找课<ExternalLink size={12}/></a></div>{courses.length>0&&<button className="quiet-button" onClick={()=>setCourseQuery('')}>查看当前项目全部课程</button>}</div>}
+-    {live.length>0&&<><h3 className="list-label">联网搜索候选 <span>{live.length}</span></h3><div className="course-grid">{live.filter(c=>platform==="全部"||c.platform===platform).map(c=><div key={c.id}><CourseCard field={field} course={c} onPlay={()=>play(c)}/><button className="collect-button" onClick={()=>{setCourses(v=>mergeCourses(v,[c]));notify("已收录候选，请继续核对内容");}}><Plus size={15}/>加入可选课程</button></div>)}</div></>}
+-    <div className="course-footnote"><Info size={16}/><span>课程按学习项目分别收录。“已收录”表示保存了原站入口，请结合平台页面核对课程内容和适用范围。</span></div></section>}
+-   {(view==='learn'||view==='graph')&&!topics.length&&<section className="new-space-empty"><SubjectArtwork field={field}/><h2>为「{title}」铺一条学习路线</h2><p>可以直接填写目录或大纲，也可以配置模型生成初步框架。书籍只需封面与目录，不需要上传整本教材。</p><div><button className="primary-button" disabled={busy} onClick={()=>startBook('update')}><FileText size={16}/>填写目录或大纲</button><button className="quiet-button" disabled={busy} onClick={generateCurrent}>{busy?<LoaderCircle className="spin" size={16}/>:<Sparkles size={16}/>}生成当前科目学习路线</button><button className="quiet-button" onClick={()=>setView('courses')}><Play size={16}/>先寻找网课</button></div></section>}
++   {view==="courses"&&<section className="courses-section"><div className="section-heading"><div><h2>本书推荐网课</h2><p>为「{title}」自动匹配B站与YouTube视频，最多各一门。</p></div></div>{searching&&<div className="empty-state"><LoaderCircle className="spin" size={26}/><p>正在匹配并核对原站链接…</p></div>}<div className="course-grid">{live.map(c=><CourseCard key={c.id} field={field} course={c} onPlay={()=>play(c)}/>)}</div>{!searching&&!live.length&&<div className="empty-state"><Play size={26}/><h3>暂未找到可核实的视频</h3><p>本书可能尚未被课程库覆盖，或平台暂时无法访问。</p></div>}{!searching&&Object.keys(statuses).length>0&&<div className="search-status">{Object.entries(statuses).map(([p,s])=><p key={p}><strong>{p}：</strong>{s}</p>)}</div>}<div className="course-footnote"><Info size={16}/><span>推荐按书名及主题匹配，不读取或比较点赞数。补充课程不保证对应指定教材或版次；点击链接跳转平台播放。</span></div></section>}
++   {(view==='learn'||view==='graph')&&!topics.length&&<section className="new-space-empty"><SubjectArtwork field={field}/><h2>为「{title}」铺一条学习路线</h2><p>可以直接填写目录或大纲，也可以配置模型生成初步框架。书籍只需封面与目录，不需要上传整本教材。</p><div><button className="primary-button" disabled={busy} onClick={()=>startBook('update')}><FileText size={16}/>填写目录或大纲</button><button className="quiet-button" disabled={busy} onClick={generateCurrent}>{busy?<LoaderCircle className="spin" size={16}/>:<Sparkles size={16}/>}生成当前科目学习路线</button><button className="quiet-button" onClick={()=>setView('courses')}><Play size={16}/>查看推荐网课</button></div></section>}
+    {busy&&job.current&&<button className="cancel-job" onClick={()=>{job.current?.abort();setBusy(false);}}>取消当前生成</button>}
+    <footer className="workspace-footer"><span>从理解一个知识点开始。</span><button onClick={()=>open("sources")}>资料来源与当前范围</button></footer>
+   </main>{toast&&<div role="status" className="toast"><CheckCircle2 size={18}/>{toast}</div>}
+-  <input ref={fileInput} className="hidden-file" type="file" accept=".json" onChange={e=>{const f=e.target.files?.[0];if(f)readFile(f);e.target.value="";}}/>{modal&&<div className="modal-backdrop" onClick={e=>{if(e.target===e.currentTarget&&!busy)setModal(null);}}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header><h2 id="modal-title">{modal==="library"?"书架与科目":modal==="settings"?"模型与搜索设置":modal==="import"?"用封面和目录建课":modal==="course"?"收录一门网课":"来源与当前范围"}</h2><button className="icon-button" aria-label="关闭弹窗" disabled={busy} onClick={()=>setModal(null)}><X size={21}/></button></header>
++  <input ref={fileInput} className="hidden-file" type="file" accept=".json" onChange={e=>{const f=e.target.files?.[0];if(f)readFile(f);e.target.value="";}}/>{modal&&<div className="modal-backdrop" onClick={e=>{if(e.target===e.currentTarget&&!busy)setModal(null);}}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header><h2 id="modal-title">{modal==="library"?"书架与科目":modal==="settings"?"模型设置":modal==="import"?"用封面和目录建课":modal==="course"?"收录一门网课":"来源与当前范围"}</h2><button className="icon-button" aria-label="关闭弹窗" disabled={busy} onClick={()=>setModal(null)}><X size={21}/></button></header>
+    {modal==='library'&&<div className="modal-body"><LearningLibrary library={library} space={space} busy={busy} hasModel={!!settings.apiKey} onActivate={switchSpace} onSubject={createSubject} onPreset={addPreset} onBook={()=>startBook('add')} onEdit={()=>startBook('update')} onBackup={backup} onRestore={()=>fileInput.current?.click()} onMeta={patch=>updateById(space.id,patch)}/>{busy&&job.current&&<button className="cancel-job" onClick={()=>{job.current?.abort();setBusy(false);}}>取消当前生成</button>}</div>}
+    {modal==="settings"&&<ModelSettingsPanel settings={settings} onChange={setSettings} returnToImport={returnToImport} onApply={()=>{const issues=modelConfigurationIssues(settings,'vision');setModal(returnToImport?'import':null);setReturnToImport(false);notify(issues.length?'设置已应用；自动识别仍待配置：'+issues.join('；'):'设置已应用，识别与讲解可共用 DeepSeek 密钥。');}}/>}
+    {modal==="import"&&<div className="modal-body"><BookOnboarding actionLabel={bookIntent==='update'?'确认并更新目录':'确认目录并上架书籍'} draft={bookDraft} onDraft={setBookDraft} settings={settings} onApply={applyBook} onSettings={()=>{setReturnToImport(true);open('settings');}} onBackup={()=>fileInput.current?.click()} onBusy={setBusy}/></div>}
+@@ -163,4 +172,4 @@
+   </section></div>}
+  </div>;
+ }
+-function CourseCard({course:c,field,compact,onPlay}:{course:Course;field:StudyField;compact?:boolean;onPlay:()=>void}){return <div className={`course-card ${compact?'compact':''}`}><div className={`course-cover ${c.platform==='B站'?'bili':'youtube'}`}>{field==='life-science'?<img className="course-art" src={assetUrl("/images/biochemistry-courses.png")} alt="" aria-hidden="true" width={1774} height={887} loading="lazy" decoding="async"/>:<SubjectArtwork field={field} compact/>}<span className="cover-art-note">主题配图</span><span>{field==='life-science'?'动物生命的化学':field==='math'?'数学与推理':field==='computing'?'编程与实践':field==='humanities'?'阅读与理解':'知识与探索'}</span><button aria-label={`打开${c.title}`} onClick={onPlay}><Play size={compact?19:24} fill="currentColor"/></button><small>{c.platform} / {c.language}</small></div><div className="course-card-body"><span className="course-platform">{c.platform}<em>{c.language}</em></span><button className="course-title" onClick={onPlay}>{c.title}</button><div className="course-school">{c.school}</div>{!compact&&<p>{c.note}</p>}<div className="course-status">{c.status}</div><a href={c.url} target="_blank" rel="noreferrer">原站观看<ExternalLink size={12}/></a></div></div>;}
++function CourseCard({course:c,field,compact,onPlay}:{course:Course;field:StudyField;compact?:boolean;onPlay:()=>void}){return <div className={`course-card ${compact?'compact':''}`}><div className={`course-cover ${c.platform==='B站'?'bili':'youtube'}`}>{field==='life-science'?<img className="course-art" src={assetUrl("/images/biochemistry-courses.png")} alt="" aria-hidden="true" width={1774} height={887} loading="lazy" decoding="async"/>:<SubjectArtwork field={field} compact/>}<span className="cover-art-note">主题配图</span><span>{field==='life-science'?'动物生命的化学':field==='math'?'数学与推理':field==='computing'?'编程与实践':field==='humanities'?'阅读与理解':'知识与探索'}</span><button aria-label={`打开${c.title}`} onClick={onPlay}><Play size={compact?19:24} fill="currentColor"/></button><small>{c.platform} / {c.language}</small></div><div className="course-card-body"><span className="course-platform">{c.platform}<em>{c.language}</em></span><button className="course-title" onClick={onPlay}>{c.title}</button><div className="course-school">{c.school}</div>{!compact&&<p>{c.note}</p>}<div className="course-status">{c.status}</div>{!compact&&c.linkCheckedAt&&<small>链接核对：{new Date(c.linkCheckedAt).toLocaleDateString('zh-CN')}</small>}<a href={c.url} target="_blank" rel="noreferrer">原站观看<ExternalLink size={12}/></a></div></div>;}
+diff --git a/app/api/courses/route.ts b/app/api/courses/route.ts
+--- a/app/api/courses/route.ts
++++ b/app/api/courses/route.ts
+@@ -1,12 +1,12 @@
+-function clean(s:unknown){return typeof s==="string"?s.replace(/<[^>]*>/g,"").replace(/&amp;/g,"&").replace(/&quot;/g,'"'):"";}
+-export async function POST(request:Request){
++import {recommendBookVideos,normalizeVideoQuery,type VideoRecommendations} from '../../../lib/course-recommendations';
++export type CourseEnvironment={COURSE_LOOKUP?:(query:string)=>Promise<VideoRecommendations>};
++export async function POST(request:Request,env:CourseEnvironment={}){
+  try{
+- const body=await request.json() as {query?:unknown;youtubeKey?:string};if(typeof body.query!=="string"||body.query.length>160)return Response.json({error:"请输入160字以内的搜索词"},{status:400});const query=body.query.trim();if(!query)return Response.json({error:"搜索词不能为空"},{status:400});
+- const results=await Promise.allSettled([
+-  (async()=>{const u=new URL("https://api.bilibili.com/x/web-interface/search/type");u.search=new URLSearchParams({search_type:"video",keyword:query,page:"1",page_size:"10"}).toString();const r=await fetch(u,{headers:{"User-Agent":"Mozilla/5.0",Referer:"https://www.bilibili.com/"},signal:AbortSignal.timeout(12000)});if(!r.ok)throw new Error(`B站返回${r.status}`);const j=await r.json() as {code:number;data?:{result?:Record<string,unknown>[]}};if(j.code!==0)throw new Error("B站暂时限制自动搜索，可使用原站搜索");return(j.data?.result||[]).filter(v=>typeof v.bvid==="string"&&/^BV[\w]{10}$/.test(v.bvid)).slice(0,8).map(v=>({id:String(v.bvid),title:clean(v.title),school:clean(v.author),teacher:clean(v.author),platform:"B站",language:"中文",url:`https://www.bilibili.com/video/${v.bvid}/`,bvid:v.bvid,note:clean(v.description).slice(0,220),status:"搜索候选 · 待核对",topics:[query]}));})(),
+-  (async()=>{if(!body.youtubeKey)return{unconfigured:true};const u=new URL("https://www.googleapis.com/youtube/v3/search");u.search=new URLSearchParams({part:"snippet",type:"playlist",q:query,maxResults:"8",key:body.youtubeKey}).toString();const r=await fetch(u,{signal:AbortSignal.timeout(12000)});if(!r.ok)throw new Error(`YouTube返回${r.status}，请检查API密钥与额度`);const j=await r.json() as {items?:{id:{playlistId:string};snippet:{title:string;channelTitle:string;description:string}}[]};return(j.items||[]).map(v=>({id:v.id.playlistId,title:clean(v.snippet.title),school:clean(v.snippet.channelTitle),teacher:clean(v.snippet.channelTitle),platform:"YouTube",language:"待核对",url:`https://www.youtube.com/playlist?list=${v.id.playlistId}`,playlistId:v.id.playlistId,note:clean(v.snippet.description).slice(0,220),status:"搜索候选 · 待核对",topics:[query]}));})()
+- ]);
+- const courses:unknown[]=[];const statuses:Record<string,string>={};["B站","YouTube"].forEach((p,i)=>{const r=results[i];if(r.status==="rejected")statuses[p]=r.reason instanceof Error?r.reason.message:"搜索失败，请使用原站搜索";else if(Array.isArray(r.value)){courses.push(...r.value);statuses[p]=`返回${r.value.length}条候选，尚未核实版本与内容`;}else statuses[p]="未配置YouTube API密钥，可使用原站搜索或已收录课程";});
+- return Response.json({courses,statuses},{headers:{"Cache-Control":"no-store"}});
+- }catch{return Response.json({error:"课程搜索失败，可重试或使用原站搜索。"},{status:502});}
++  const text=await request.text();if(text.length>3000)return Response.json({error:'请求内容过长。'},{status:413});
++  let body:unknown;try{body=JSON.parse(text);}catch{return Response.json({error:'请求格式无效。'},{status:400});}
++  let query:string;try{query=normalizeVideoQuery(body&&typeof body==='object'?(body as Record<string,unknown>).query:undefined);}catch{return Response.json({error:'请提供160字以内的当前书名。'},{status:400});}
++  // Customer requests never provide a merchant API key or select arbitrary APIs.
++  const result=env.COURSE_LOOKUP?await env.COURSE_LOOKUP(query):await recommendBookVideos(query,{});
++  return Response.json(result,{headers:{'Cache-Control':'no-store'}});
++ }catch{return Response.json({error:'课程推荐暂时不可用，请稍后再试。'},{status:502});}
+ }
+diff --git a/github/api-worker.ts b/github/api-worker.ts
+--- a/github/api-worker.ts
++++ b/github/api-worker.ts
+@@ -1,8 +1,8 @@
+ import { POST as modelPost } from '../app/api/model/route';
+-import { POST as coursesPost } from '../app/api/courses/route';
++import { POST as coursesPost, type CourseEnvironment } from '../app/api/courses/route';
+ 
+-export type ApiEnvironment = { ALLOWED_ORIGINS?: string };
+-export type ApiHandler = (request: Request) => Response | Promise<Response>;
++export type ApiEnvironment = CourseEnvironment & { ALLOWED_ORIGINS?: string };
++export type ApiHandler = (request: Request, env?: ApiEnvironment) => Response | Promise<Response>;
+ export type ApiHandlers = { model: ApiHandler; courses: ApiHandler };
+ 
+ function allowedOrigins(value: string | undefined): Set<string> {
+@@ -69,7 +69,7 @@
+         : json('请求方法不受支持。', 405, corsOrigin, { Allow: 'GET, OPTIONS' });
+       if (request.method !== 'POST') return json('请求方法不受支持。', 405, corsOrigin, { Allow: 'POST, OPTIONS' });
+       try {
+-        return decorate(await handler!(request), corsOrigin);
++        return decorate(await handler!(request, env), corsOrigin);
+       } catch {
+         // Provider exceptions and request bodies can contain credentials. Never echo them.
+         return json('接口暂时不可用，请稍后重试。', 502, corsOrigin);
+diff --git a/github/commerce-worker.ts b/github/commerce-worker.ts
+--- a/github/commerce-worker.ts
++++ b/github/commerce-worker.ts
+@@ -1,10 +1,11 @@
+ import {DurableObject} from 'cloudflare:workers';
+ import personalWorker from './api-worker';
+ import {readBook,commercialQuote,callReservation,lessonMessages,actualModelCost,parseCommercialLesson,randomSecret,sha256,constantTimeEqual,COMMERCE_POLICY,CommerceError,orderStatusLabel,type CommercialBook} from '../lib/commerce-core';
++import {recommendBookVideos,normalizeVideoQuery,type VideoRecommendations} from '../lib/course-recommendations';
+ import {inferField} from '../lib/subject-catalog';
+ import {parseContents,topicsFromContents} from '../lib/curriculum';
+ 
+-type Env={ALLOWED_ORIGINS?:string;ORDERS:DurableObjectNamespace;COMMERCE_ASSETS:Fetcher;DEEPSEEK_API_KEY?:string;COMMERCE_ADMIN_KEY?:string;COMMERCE_DAILY_BUDGET_CNY?:string;COMMERCE_PREVIEW?:string;MODEL_FETCH?:typeof fetch};
++type Env={ALLOWED_ORIGINS?:string;ORDERS:DurableObjectNamespace;COMMERCE_ASSETS:Fetcher;DEEPSEEK_API_KEY?:string;COMMERCE_ADMIN_KEY?:string;COMMERCE_DAILY_BUDGET_CNY?:string;COMMERCE_PREVIEW?:string;VIDEO_FETCH?:typeof fetch;MODEL_FETCH?:typeof fetch};
+ type OrderRow={id:string;token_hash:string;book_json:string;status:string;created_at:number;updated_at:number;estimated_micro:number;spent_micro:number;payment_ref:string|null;note:string;error:string};
+ type UnitRow={order_id:string;idx:number;status:string;attempts:number;content_json:string|null;reserved_micro:number;lease_until:number;reserve_day:number;claim:string;error:string};
+ const reply=(value:unknown,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
+@@ -21,8 +22,25 @@
+   ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS daily(day INTEGER PRIMARY KEY,spent_micro INTEGER NOT NULL DEFAULT 0,reserved_micro INTEGER NOT NULL DEFAULT 0)`);
+   ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS rate_limits(key TEXT PRIMARY KEY,count INTEGER NOT NULL,until_at INTEGER NOT NULL)`);
+   ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)`);
++  ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS course_cache(key TEXT PRIMARY KEY,result_json TEXT NOT NULL,expires_at INTEGER NOT NULL)`);
+  }
+  private rows<T>(sql:string,...bindings:(string|number|null)[]):T[]{return this.ctx.storage.sql.exec(sql,...bindings).toArray() as T[];}
++ private videoRequests=new Map<string,Promise<VideoRecommendations>>();
++ private async recommendations(rawQuery:string):Promise<VideoRecommendations>{
++  const query=normalizeVideoQuery(rawQuery),key=await sha256('links-v2|'+query.toLowerCase());
++  const stored=this.rows<{result_json:string;expires_at:number}>('SELECT * FROM course_cache WHERE key=?',key)[0];
++  if(stored&&stored.expires_at>Date.now())return JSON.parse(stored.result_json);
++  const pending=this.videoRequests.get(key);if(pending)return pending;
++  const work=(async()=>{
++   const previous=stored?JSON.parse(stored.result_json) as VideoRecommendations:undefined;
++   const result=await recommendBookVideos(query,{fetcher:this.env.VIDEO_FETCH||fetch,previous});
++   this.ctx.storage.sql.exec('DELETE FROM course_cache WHERE expires_at<?',Date.now()-86400000);
++   this.ctx.storage.sql.exec('DELETE FROM course_cache WHERE key IN (SELECT key FROM course_cache ORDER BY expires_at DESC LIMIT -1 OFFSET 499)');
++   this.ctx.storage.sql.exec('INSERT OR REPLACE INTO course_cache VALUES(?,?,?)',key,JSON.stringify(result),Date.now()+result.retryAfterSeconds*1000);
++   return result;
++  })();
++  this.videoRequests.set(key,work);try{return await work;}finally{this.videoRequests.delete(key);}
++ }
+  private credentialCheck:Promise<boolean>|null=null;
+  private async credentialsReady():Promise<boolean>{
+   if(!ready(this.env))return false;
+@@ -65,6 +83,7 @@
+  async fetch(r:Request):Promise<Response>{try{
+   const p=new URL(r.url).pathname,m=r.method;
+   if(p==='/config'&&m==='GET')return reply({acceptingOrders:await this.credentialsReady()&&!this.rows<{value:string}>("SELECT value FROM settings WHERE key='paused'")[0]?.value.includes('true'),priceFen:990,paymentImage:'/payments/wechat.jpg',merchantName:'春花满目望君秋',manualPayment:true,preview:this.env.COMMERCE_PREVIEW==='1'});
++  if(p==='/recommendations'&&m==='POST'){await this.rate('videos:'+r.headers.get('X-Client-Key'),30,3600000);const b=await jsonBody(r);let query:string;try{query=normalizeVideoQuery(b.query);}catch{throw new CommerceError('请提供160字以内的当前书名。');}return reply(await this.recommendations(query));}
+   if(p==='/quote'&&m==='POST'){await this.rate('quote:'+r.headers.get('X-Client-Key'),60,3600000);return reply(commercialQuote(readBook(await jsonBody(r))));}
+   if(p==='/orders'&&m==='POST'){
+    if(!await this.credentialsReady()||this.rows<{value:string}>("SELECT value FROM settings WHERE key='paused'")[0]?.value==='true')throw new CommerceError('当前暂不接受新订单，请稍后再来。',503);
+@@ -91,8 +110,8 @@
+     if(o.status!=='complete')throw new CommerceError('整本课程尚未完成，请稍后下载。',409);
+     const b=JSON.parse(o.book_json) as CommercialBook,lessons=this.rows<UnitRow>('SELECT * FROM units WHERE order_id=? ORDER BY idx',o.id);
+     const topics=topicsFromContents(parseContents(b.toc)).map((t,i)=>({...t,lesson:JSON.parse(lessons[i].content_json!),sourceType:'AI配套学习课程 · 通用知识讲解'}));
+-    const sid='paid-'+o.id;
+-    return reply({schemaVersion:3,activeId:sid,spaces:[{id:sid,title:b.title,mode:'book',field:inferField(b.title),level:b.level,kind:'整本配套学习课程',bookPlan:{title:b.title,author:'',edition:'',toc:b.toc,importedOn:new Date(o.created_at).toISOString(),field:inferField(b.title),level:b.level},topics,courses:[],selected:topics[0]?.id||'',learned:[],saved:[],notes:{}}]});
++    const sid='paid-'+o.id;const videos=await this.recommendations(b.title);
++    return reply({schemaVersion:3,activeId:sid,spaces:[{id:sid,title:b.title,mode:'book',field:inferField(b.title),level:b.level,kind:'整本配套学习课程',bookPlan:{title:b.title,author:'',edition:'',toc:b.toc,importedOn:new Date(o.created_at).toISOString(),field:inferField(b.title),level:b.level},topics,courses:videos.courses,selected:topics[0]?.id||'',learned:[],saved:[],notes:{}}]});
+    }
+    if(m==='GET'&&!buyer[2])return reply(this.summary(o));
+   }
+@@ -209,6 +228,14 @@
+     return cors(await stub.fetch(new Request(target,{method:request.method,headers,body:['GET','HEAD'].includes(request.method)?undefined:request.body,duplex:'half'} as RequestInit)),origin);
+    }catch(error){return customerError(error);}
+   }
++  if(p==='/api/courses'){
++   const lookup=async(query:string)=>{
++    const stub=env.ORDERS.get(env.ORDERS.idFromName('book-commerce-v1'));
++    const response=await stub.fetch(new Request('https://internal/recommendations',{method:'POST',headers:{'Content-Type':'application/json','X-Client-Key':await sha256(request.headers.get('CF-Connecting-IP')||'local')},body:JSON.stringify({query})}));
++    if(!response.ok)throw new Error('Video recommendations unavailable');return response.json() as Promise<VideoRecommendations>;
++   };
++   return personalWorker.fetch(request,{...env,COURSE_LOOKUP:lookup});
++  }
+   if(p==='/health'||p.startsWith('/api/'))return personalWorker.fetch(request,env);
+   if(['GET','HEAD'].includes(request.method)){
+    const url=new URL(request.url);if(p==='/'||p==='/books'||p==='/books/')url.pathname='/index.html';else if(p==='/admin'||p==='/admin/')url.pathname='/admin.html';
+diff --git a/github/commerce-assets/app.js b/github/commerce-assets/app.js
+--- a/github/commerce-assets/app.js
++++ b/github/commerce-assets/app.js
+@@ -5,6 +5,21 @@
+ const storageKey='zhixue-paid-orders-v1';
+ function notice(message,error=false){$('notice').hidden=!message;$('notice').textContent=message;$('notice').className='notice'+(error?' error':'');}
+ async function api(path,options={}){const headers={'Content-Type':'application/json',...(options.headers||{})};const r=await fetch('/api/commerce'+path,{...options,headers});let data;try{data=await r.json();}catch{throw new Error('服务暂时不可用，请稍后重试。');}if(!r.ok)throw new Error(data.error||'请求未完成');return data;}
++let videoTitle='',videoController=null,videoTimer=null;
++async function loadBookVideos(rawTitle){
++ const title=rawTitle.trim();if(title===videoTitle)return;videoTitle=title;videoController?.abort();
++ const box=$('videos');$('videos-card').hidden=!title;if(!title)return;
++ $('videos-title').textContent='当前书籍：'+title;box.textContent='正在匹配并核对视频链接…';
++ const controller=new AbortController();videoController=controller;
++ try{const data=await api('/recommendations',{method:'POST',signal:controller.signal,body:JSON.stringify({query:title})});if(controller.signal.aborted)return;
++  box.replaceChildren();for(const c of data.courses||[]){
++   if(!/^https:\/\/(?:www\.bilibili\.com\/video\/BV[\w]{10}\/|www\.youtube\.com\/watch\?v=[\w-]{11})$/.test(c.url))continue;
++   const card=document.createElement('article');card.className='video-link';
++   card.innerHTML=`<span class="badge">${esc(c.platform)} · ${esc(c.language)}</span><h3>${esc(c.title)}</h3><p>${esc(c.school)}</p><p class="hint">${esc(c.note)}</p><a class="video-watch" href="${esc(c.url)}" target="_blank" rel="noopener noreferrer">前往${esc(c.platform)}观看 ↗</a>`;box.append(card);
++  }
++  const status=document.createElement('p');status.className='hint';status.textContent=Object.entries(data.statuses||{}).map(([p,v])=>p+'：'+v).join(' ');box.append(status);
++ }catch{if(!controller.signal.aborted)box.textContent='暂未取得相关视频链接，请稍后重新打开。';}
++}
+ function savedOrders(){try{const list=JSON.parse(localStorage.getItem(storageKey)||'[]');return Array.isArray(list)?list.filter(x=>/^ZX[A-Z0-9]+$/.test(x.id)&&/^[a-f0-9]{48}$/.test(x.token)).slice(0,20):[];}catch{return [];}}
+ function remember(order){try{localStorage.setItem(storageKey,JSON.stringify([order,...savedOrders().filter(x=>x.id!==order.id)].slice(0,20)));}catch{notice('订单已创建，但浏览器未能保存恢复凭证，请立即复制或下载凭证。',true);}renderRecent();}
+ function renderRecent(){const box=$('recent-orders');box.replaceChildren();for(const order of savedOrders()){const b=document.createElement('button');b.className='secondary recent';b.textContent=(order.title||order.id)+' · 打开订单';b.addEventListener('click',()=>openOrder(order));box.append(b);}}
+@@ -20,11 +35,12 @@
+  $('refresh-order').addEventListener('click',()=>openOrder(current));
+  if(payment)$('payment-form').addEventListener('submit',async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;try{const updated=await api('/orders/'+current.id+'/payment',{method:'POST',headers:{Authorization:'Bearer '+current.token},body:JSON.stringify({note:$('payment-note').value})});notice('已提交付款信息，等待商家核对到账。');renderOrder(updated);schedule(updated);}catch(error){notice(error.message,true);button.disabled=false;}});
+  if(order.status==='complete')$('download-book').addEventListener('click',async()=>{try{const data=await api('/orders/'+current.id+'/download',{headers:{Authorization:'Bearer '+current.token}});saveFile(order.title+'-学习库.json',JSON.stringify(data,null,2));}catch(error){notice(error.message,true);}});
++ loadBookVideos(order.title);
+  renderLessons(order.lessons||[]);
+ }
+ function renderLessons(lessons){$('lessons-card').hidden=!lessons.length;const box=$('lessons');box.replaceChildren();for(const item of lessons){const l=item.lesson;const details=document.createElement('details');details.className='lesson';details.innerHTML=`<summary>${item.index+1}. ${esc(item.unit.title)}</summary><div class="lesson-body"><h3>学习目标</h3><p>${esc(l.goal)}</p><h3>从一个问题开始</h3><p>${esc(l.opening)}</p><h3>先认识这些词</h3>${l.terms.map(t=>`<p><strong>${esc(t.name)}</strong>：${esc(t.meaning)}</p>`).join('')}${l.steps.map((s,i)=>`<h3>${i+1}. ${esc(s.title)}</h3><p>${esc(s.body)}</p>`).join('')}<h3>跟着做一个例子</h3><p>${esc(l.example.question)}</p><p>${esc(l.example.reasoning)}</p><p>${esc(l.example.answer)}</p><h3>理解检查</h3>${l.checks.map(c=>`<p><strong>${esc(c.question)}</strong><br>${esc(c.answer)}</p>`).join('')}<p class="hint">AI 配套学习讲解，未读取原书正文，内容请结合教材核对。</p></div>`;box.append(details);}}
+ $('quote-form').addEventListener('submit',async e=>{
+- e.preventDefault();if(requestBusy)return;requestBusy=true;$('quote-button').disabled=true;notice('');
++ e.preventDefault();loadBookVideos($('title').value);if(requestBusy)return;requestBusy=true;$('quote-button').disabled=true;notice('');
+  try{draft={title:$('title').value.trim(),toc:$('toc').value.trim(),level:$('level').value};const q=await api('/quote',{method:'POST',body:JSON.stringify(draft)});const box=$('quote-result');box.hidden=false;
+   box.innerHTML=q.supported?`<h3>支持整本生成 · ${q.units} 个学习单元</h3><div class="price">¥9.90</div><p>包含已确认目录的逐节配套讲解，完成后可阅读并下载学习库。重写与追加答疑不包含在本次订单中。</p><label class="checklabel"><input type="checkbox" id="accept-scope">我已校对完整目录，了解这是 AI 配套讲解，付款由商家人工核对。</label><button id="create-order" disabled>${config.acceptingOrders?'创建 ¥9.90 付款订单':'收款尚未开放，暂不能创建订单'}</button>`:`<h3>这本书暂不支持整本生成</h3><p>当前目录为 ${q.units} 个学习单元，本次不会创建付款订单。</p>`;
+   if(q.supported){$('accept-scope').addEventListener('change',()=>{$('create-order').disabled=!config.acceptingOrders||!$('accept-scope').checked;});$('create-order').addEventListener('click',async()=>{const b=$('create-order');b.disabled=true;try{const data=await api('/orders',{method:'POST',body:JSON.stringify(draft)});current={id:data.order.id,token:data.accessToken,title:data.order.title};remember(current);renderOrder(data.order);schedule(data.order);$('order-card').scrollIntoView({behavior:'smooth',block:'start'});}catch(error){notice(error.message,true);b.disabled=false;}});}
+@@ -37,4 +53,5 @@
+  try{if(location.hash.startsWith('#draft=')){const decoded=decodeURIComponent(escape(atob(location.hash.slice(7).replace(/-/g,'+').replace(/_/g,'/'))));const d=JSON.parse(decoded);if(typeof d.title==='string')$('title').value=d.title.slice(0,200);if(typeof d.toc==='string')$('toc').value=d.toc.slice(0,20000);history.replaceState(null,'',location.pathname);}}catch{notice('预填目录未能读取，请在下方重新填写。',true);}
+  renderRecent();try{config=await api('/config');if(config.preview)$('preview-banner').hidden=false;else if(!config.acceptingOrders)notice('当前可先查看报价。商家正在完成收款配置，暂不接受付款。');if($('create-order')){$('create-order').textContent=config.acceptingOrders?'创建 ¥9.90 付款订单':'收款尚未开放，暂不能创建订单';$('create-order').disabled=!config.acceptingOrders||!$('accept-scope').checked;}}catch(error){notice(error.message,true);}
+ }
+-init();
++$('title').addEventListener('input',()=>{clearTimeout(videoTimer);videoTimer=setTimeout(()=>loadBookVideos($('title').value),1200);});
++init().then(()=>{if($('title').value.trim())loadBookVideos($('title').value);});
+diff --git a/github/commerce-assets/index.html b/github/commerce-assets/index.html
+--- a/github/commerce-assets/index.html
++++ b/github/commerce-assets/index.html
+@@ -4,5 +4,5 @@
+ <div id="preview-banner" class="notice" hidden>本地预览：请勿真实付款。</div><div id="notice" class="notice" role="status" hidden></div>
+ <div class="layout"><section class="card" id="draft-card"><span class="step">01 / 校对目录</span><h2>准备你的学习课程</h2><form id="quote-form"><label>书名<input id="title" maxlength="200" placeholder="例如：高等数学、动物生物化学" required></label><label>学习基础<select id="level"><option>零基础</option><option>已有基础</option></select></label><label>完整目录<textarea id="toc" rows="12" maxlength="20000" placeholder="第一章 函数与极限&#10;1.1 函数&#10;1.2 极限&#10;第二章 导数与微分&#10;2.1 导数的概念" required></textarea></label><p class="hint">一行一个章名或小节。目录决定生成范围，付款后不能修改该订单的目录。</p><button id="quote-button" type="submit">查看整本报价</button></form><section id="quote-result" class="result" hidden></section></section>
+ <aside><section class="card compact"><span class="step">如何开始</span><ol class="steps"><li>填写并核对整本目录</li><li>支持后，创建 ¥9.90 订单</li><li>微信扫码付款并提交核对信息</li><li>商家确认到账后，后台生成</li></ol><p class="hint">课程根据目录编写通用知识讲解，不包含原书全文，也不保证复现原书例题或作者观点。AI 内容可能出错，请结合教材核对。</p></section><section class="card compact"><h3>找回已有订单</h3><form id="restore-form"><label>订单恢复凭证<textarea id="restore-code" rows="3" placeholder="粘贴创建订单时保存的恢复凭证" required></textarea></label><button class="secondary" type="submit">打开订单</button></form><p class="hint">恢复凭证可以访问订单内容，请妥善保管。</p><div id="recent-orders"></div></section></aside></div>
+-<section id="order-card" class="card" hidden></section><section id="lessons-card" class="card" hidden><span class="step">你的学习课程</span><h2>已完成的讲解</h2><div id="lessons"></div></section>
++<section id="order-card" class="card" hidden></section><section id="videos-card" class="card" hidden><span class="step">本书推荐网课</span><h2>跟着视频一起学</h2><p id="videos-title" class="hint"></p><div id="videos" class="video-grid" aria-live="polite"></div><p class="hint">按书名主题匹配，最多提供B站与YouTube各一门。不读取点赞数；补充课程不保证对应教材版次，点击前往原站播放。</p></section><section id="lessons-card" class="card" hidden><span class="step">你的学习课程</span><h2>已完成的讲解</h2><div id="lessons"></div></section>
+ </main><footer>知学图谱 · 从理解一个知识点开始。<br>付款后由商家人工核对，到账确认前不会调用付费模型。生成异常时请保存订单号并联系收款方处理。</footer></body></html>
+diff --git a/github/commerce-assets/style.css b/github/commerce-assets/style.css
+--- a/github/commerce-assets/style.css
++++ b/github/commerce-assets/style.css
+@@ -1 +1,3 @@
+ :root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:#233c3e;background:#f4f7f5;font-synthesis:none;--accent:#28766b;--line:#dce6df}*{box-sizing:border-box}body{margin:0}header{max-width:1160px;margin:auto;padding:24px 28px;display:flex;justify-content:space-between;align-items:center;gap:18px}a{color:#39766d;text-decoration:none}a:hover{text-decoration:underline}.brand{font-size:23px;font-weight:750;color:#233c3e}.brand span{font-size:12px;font-weight:500;margin-left:12px;color:#748582}main{max-width:1120px;margin:0 auto;padding:16px 28px 40px}.hero{padding:36px 0 42px;max-width:780px}.eyebrow,.step{font-size:12px;letter-spacing:1.5px;font-weight:700;color:#588b7e}.hero h1{font-family:Georgia,"Songti SC",serif;font-size:clamp(32px,4.5vw,52px);line-height:1.35;letter-spacing:-1px;margin:16px 0}.hero p{color:#6c7e79;font-size:16px;line-height:1.9}.hero strong{color:#28766b}.hero.small{padding:22px 0}.hero.small h1{font-size:34px}.chips{display:flex;flex-wrap:wrap;gap:9px;margin-top:22px}.chips span{background:#e9f0eb;border:1px solid #dce8df;padding:7px 12px;border-radius:30px;font-size:12px;color:#55766a}.layout{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(260px,1fr);gap:22px;align-items:start}.card{background:white;border:1px solid var(--line);border-radius:15px;padding:28px;margin-bottom:22px;box-shadow:0 3px 12px #294f3910}.compact{padding:24px}h2{font-size:23px;margin:12px 0 24px}h3{font-size:18px;margin-top:0}label{display:block;font-size:14px;font-weight:600;margin:18px 0 8px}input,textarea,select{width:100%;font:inherit;font-weight:400;border:1px solid #cfdcd4;border-radius:8px;background:#fdfefd;padding:12px;margin-top:8px;color:#243f38}textarea{line-height:1.8;resize:vertical}input:focus,textarea:focus,select:focus{outline:2px solid #82b9a9;outline-offset:1px}button{font:inherit;background:var(--accent);border:1px solid var(--accent);color:white;cursor:pointer;border-radius:8px;padding:12px 18px;font-size:14px;font-weight:600}button:hover{filter:brightness(.96)}button:disabled{opacity:.45;cursor:not-allowed}.secondary{background:#fff;color:#387264;border-color:#c7d8ce}.danger{color:#9a4541;border-color:#dcbfba}.hint{font-size:12px;color:#768780;line-height:1.8}.steps{padding-left:22px;line-height:2.5;color:#536b61;font-size:14px}.notice,.result{padding:18px;border:1px solid #c9dfd3;border-radius:10px;background:#edf5ef;margin:15px 0;line-height:1.8}.notice.error{border-color:#e2c7ba;background:#fff4ed;color:#944b31}.result h3{margin:0 0 10px}.price{font-size:32px;color:#28766b;font-weight:750}.payment{display:grid;grid-template-columns:240px 1fr;gap:30px;margin-top:22px}.qr{width:100%;max-width:240px;border-radius:12px}.actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.toolbar{display:flex;justify-content:space-between;align-items:center;gap:20px}.badge{display:inline-block;border-radius:30px;background:#e9f2ed;color:#3b7967;padding:5px 10px;font-size:12px}.credentials{background:#f4f7f5;padding:14px;border:1px dashed #c8d7ce;border-radius:9px;overflow-wrap:anywhere;font-family:monospace;font-size:12px}.lesson{border-top:1px solid var(--line);padding:18px 0}.lesson summary{cursor:pointer;font-weight:650;color:#345e50;font-size:17px;line-height:1.7}.lesson-body{line-height:1.95;white-space:pre-wrap;color:#3d544a}.lesson-body h3{margin:22px 0 8px;font-size:17px}.lesson-body p{margin:8px 0}.order-meta{font-size:13px;color:#6a7e74;line-height:1.9;overflow-wrap:anywhere}.admin-order{padding:24px}.admin-order p{white-space:pre-wrap}.admin-form{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:end;margin:18px 0}.admin-form input{margin:0}.checklabel{font-weight:400;display:flex;gap:8px;align-items:flex-start}.checklabel input{width:auto;margin:3px 0 0}.recent{display:block;margin:12px 0;font-size:12px;text-align:left}.progress{height:7px;background:#eaf0eb;border-radius:10px;overflow:hidden;margin:12px 0}.progress div{height:100%;background:#5d9983;width:0}.receipt-button{margin:12px 0}.subtitle{color:#738479;font-size:13px}footer{text-align:center;line-height:1.9;font-size:12px;color:#85948b;padding:25px 25px 40px}[hidden]{display:none!important}@media(max-width:720px){header{padding:18px}.brand span{display:block;margin:4px 0 0}header>a:last-child{font-size:12px}main{padding:0 16px 25px}.hero{padding:20px 0 28px}.layout{grid-template-columns:1fr}.card{padding:21px}.payment{grid-template-columns:1fr}.qr{max-width:220px}.toolbar{align-items:flex-start;flex-direction:column}.admin-form{grid-template-columns:1fr}.hero.small h1{font-size:28px}.actions button{padding:10px 12px}}
++
++.video-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}.video-link{border:1px solid var(--line,#dce5df);border-radius:14px;padding:22px;background:#fafcf9}.video-link h3{line-height:1.5;margin:14px 0 8px}.video-watch{display:inline-block;padding:10px 0;color:#216549;font-weight:700}.video-grid>.hint{grid-column:1/-1}@media(max-width:650px){.video-grid{grid-template-columns:1fr}.video-link{padding:18px}}
+diff --git a/components/ModelSettingsPanel.tsx b/components/ModelSettingsPanel.tsx
+--- a/components/ModelSettingsPanel.tsx
++++ b/components/ModelSettingsPanel.tsx
+@@ -27,7 +27,6 @@
+    <label>图片模型名称<input value={vision.model} placeholder={vision.provider==='deepseek'?DEEPSEEK_DEFAULT_MODEL:'支持图片输入的准确模型 ID'} onChange={e=>onChange(v=>({...v,visionModel:e.target.value}))}/></label>
+    <label>独立图片 API 密钥（同服务商可留空共用）<input type="password" autoComplete="off" spellCheck={false} value={settings.visionKey||''} placeholder={vision.provider===settings.provider?'留空使用上方密钥':'填写图片服务商的密钥'} onChange={e=>onChange(v=>({...v,visionKey:e.target.value}))}/></label>
+   </details>
+-  <details className="model-advanced"><summary>YouTube 搜索设置（可选）</summary><label>YouTube Data API 密钥<input type="password" autoComplete="off" value={settings.youtubeKey} placeholder="用于联网检索播放列表" onChange={e=>onChange(v=>({...v,youtubeKey:e.target.value}))}/></label></details>
+   <p className="form-note model-session-note"><Info size={15}/>密钥只在当前页面会话使用，刷新后需重新填写，不会进入学习库备份。模型调用可能消耗你自己账号的 API 额度。</p>
+   <button className="primary-button full" onClick={onApply}>{returnToImport?'应用设置并返回上架窗口':'应用设置'}</button>
+  </div>;
+diff --git a/lib/learning-data.ts b/lib/learning-data.ts
+--- a/lib/learning-data.ts
++++ b/lib/learning-data.ts
+@@ -1,5 +1,5 @@
+ export type Topic = { id: string; title: string; group: string; brief: string; explanation: string; points: string[]; misconception: string; prerequisites: string[]; tags: string[]; evidence?: string; source?: string; sourceType?: string; chapterId?:string; lesson?:import('./curriculum').Lesson };
+-export type Course = { id: string; title: string; school: string; teacher: string; platform: "B站" | "YouTube" | "MOOC"; language: string; url: string; note: string; status: string; topics: string[]; official?: string; playlistId?: string; videoId?: string; bvid?: string };
++export type Course = { id: string; title: string; school: string; teacher: string; platform: "B站" | "YouTube" | "MOOC"; language: string; url: string; note: string; status: string; topics: string[]; official?: string; playlistId?: string; videoId?: string; bvid?: string; linkCheckedAt?:string; matchType?:'book'|'subject' };
+ export const groupNames = ["生物分子", "酶与能量", "物质代谢", "遗传信息"];
+ export const topicRows: Array<[string,string,string,string,string,string[],string,string[],string[]]> = [
+  ["amino","氨基酸与肽键","生物分子","蛋白质从哪些基本单位搭建而来？","氨基酸是蛋白质的基本组成单位。相邻氨基酸通过肽键连接形成多肽链；侧链的差异影响蛋白质的性质。理解氨基酸的电荷与极性，是进一步理解折叠、分离和酶催化的基础。",["辨认氨基、羧基和侧链","区分疏水、极性和带电侧链","理解肽链的N端、C端与方向性"],"肽键连接的顺序与蛋白质在空间中的折叠属于不同层次。",[],["amino acids","protein","氨基酸"]],
+@@ -35,7 +35,7 @@
+  {id:"mit705",title:"General Biochemistry · 代谢选讲",school:"MIT OpenCourseWare",teacher:"Matthew Vander Heiden",platform:"YouTube",language:"英文",url:"https://www.youtube.com/playlist?list=PLUl4u3cNGP62wNcIMfinU64CAfreShjpt",playlistId:"PLUl4u3cNGP62wNcIMfinU64CAfreShjpt",note:"官方公开视频主要为课程后半部分，15节选讲。适合补充糖、脂、氨基酸和核苷酸代谢。",status:"官方选讲 · 非全套",topics:["carbohydrate","lipid","metabolism","glycolysis","TCA","nucleotide","amino acid metabolism","糖","脂类","代谢","核苷酸"],official:"https://ocw.mit.edu/courses/7-05-general-biochemistry-spring-2020/video_galleries/video-lectures/"}
+ ];
+ export const projectReferences = [
+- {name:"Google APIs Node.js Client",url:"https://github.com/googleapis/google-api-nodejs-client",role:"官方API客户端，可参考YouTube课程搜索与播放列表信息读取。",license:"Apache-2.0",status:"当前程序以REST调用同一官方搜索接口，需用户的API密钥"},
++ {name:"Google APIs Node.js Client",url:"https://github.com/googleapis/google-api-nodejs-client",role:"官方API客户端，可参考YouTube课程搜索与播放列表信息读取。",license:"Apache-2.0",status:"当前暂缓接入；推荐视频链接无需客户填写API密钥"},
+  {name:"YouTube.js",url:"https://github.com/LuanRT/YouTube.js",role:"YouTube内部API的JavaScript客户端，可研究课程搜索和播放列表读取。",license:"MIT",status:"非官方接口备选，尚未接入本程序"},
+  {name:"DeepTutor",url:"https://github.com/HKUDS/DeepTutor",role:"参考教材知识库、章节式讲解与学习工作台的组织方式。",license:"Apache-2.0",status:"仅参考学习流程；网课只保留原站入口"}
+ ];
+diff --git a/lib/library-store.ts b/lib/library-store.ts
+--- a/lib/library-store.ts
++++ b/lib/library-store.ts
+@@ -92,6 +92,8 @@
+         ...(parsed.videoId ? { videoId: parsed.videoId } : {}),
+         ...(parsed.bvid ? { bvid: parsed.bvid } : {}),
+         ...(httpsUrl(raw.official) ? { official: httpsUrl(raw.official) } : {}),
++        ...(typeof raw.linkCheckedAt==='string'&&Number.isFinite(Date.parse(raw.linkCheckedAt))?{linkCheckedAt:raw.linkCheckedAt}:{}),
++        ...(raw.matchType==='book'||raw.matchType==='subject'?{matchType:raw.matchType as 'book'|'subject'}:{}),
+       }];
+     } catch { return []; }
+   });
+diff --git a/lib/course-recommendations.ts b/lib/course-recommendations.ts
+new file mode 100644
+--- /dev/null
++++ b/lib/course-recommendations.ts
+@@ -0,0 +1,54 @@
++import {reviewedBilibili} from './reviewed-course-links';
++import type {Course} from './learning-data';
++export type VideoRecommendations={query:string;courses:Course[];statuses:Record<string,string>;checkedAt:string;retryAfterSeconds:number};
++export type VideoSearchOptions={fetcher?:typeof fetch;previous?:VideoRecommendations};
++const clean=(value:unknown)=>typeof value==='string'?value.replace(/<[^>]*>/g,'').replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;|&apos;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim():'';
++const normalize=(s:string)=>s.normalize('NFKC').toLowerCase().replace(/第[一二三四五六七八九十\d]+版|第\s*\d+\s*版|\b\d+(?:st|nd|rd|th)\s+edition\b/gi,'').replace(/[《》\s\p{P}\p{S}]/gu,'');
++export function normalizeVideoQuery(value:unknown):string{if(typeof value!=='string'||!value.trim()||value.trim().length>160)throw new Error('书名需要为1–160字。');return value.trim().replace(/\s+/g,' ');}
++const translations:[RegExp,string][]=[[/生物化学|biochemistry/i,'biochemistry'],[/货币银行|货币金融|money and banking/i,'money and banking'],[/线性代数|linear algebra/i,'linear algebra'],[/微积分|高等数学|calculus/i,'calculus'],[/python/i,'python programming'],[/概率|统计|statistics/i,'probability statistics'],[/大学物理|physics/i,'physics'],[/计算机组成|computer architecture/i,'computer architecture'],[/世界历史|world history/i,'world history'],[/有机化学|organic chemistry/i,'organic chemistry']];
++export function englishVideoQuery(query:string):string{return translations.find(([p])=>p.test(query))?.[1]||query;}
++export function courseMatch(query:string,text:string):'book'|'subject'|null{
++ const q=normalize(query),t=normalize(text);if(q.length>=2&&t.includes(q))return 'book';
++ const translated=translations.find(([p])=>p.test(query))?.[1];if(translated){const words=translated.split(' ').filter(w=>!['programming','probability'].includes(w));if(words.length&&words.every(w=>new RegExp('\\b'+w+'\\b','i').test(text)))return 'subject';}
++ const chinese=q.replace(/[^\p{Script=Han}]/gu,'').replace(/教材|教程|基础|入门|课程|实践/g,'');
++ const grams=[...new Set(Array.from({length:Math.max(0,chinese.length-1)},(_,i)=>chinese.slice(i,i+2)))];
++ if(grams.length>=2&&grams.filter(g=>t.includes(g)).length>=Math.max(2,Math.ceil(grams.length*.65)))return 'subject';
++ const words=query.toLowerCase().match(/[a-z][a-z0-9+#]{2,}/g)||[];
++ return words.length&&words.every(w=>text.toLowerCase().includes(w))?'subject':null;
++}
++
++const youtubeCatalog=[{"subject": "biochemistry", "id": "KLb5CmPM7YY", "title": "12. Carbohydrates/Introduction to Membranes", "author": "MIT OpenCourseWare", "source": "https://ocw.mit.edu/courses/7-05-general-biochemistry-spring-2020/resources/lecture-12-carbohydrates-introduction-to-membranes/"}, {"subject": "calculus", "id": "_nbtaQtX6JA", "title": "Definition of the Derivative | MIT 18.01SC Single Variable Calculus, Fall 2010", "author": "MIT OpenCourseWare", "source": "https://ocw.mit.edu/courses/18-01sc-single-variable-calculus-fall-2010/pages/1.-differentiation/part-a-definition-and-basic-rules/session-1-introduction-to-derivatives/"}, {"subject": "python programming", "id": "xAcTmDO6NTI", "title": "Lecture 1: Introduction to CS and Programming Using Python", "author": "MIT OpenCourseWare", "source": "https://ocw.mit.edu/courses/6-100l-introduction-to-cs-and-programming-using-python-fall-2022/resources/6100l-lecture-1-version-2_mp4/"}, {"subject": "linear algebra", "id": "J7DzL2_Na80", "title": "1. The Geometry of Linear Equations", "author": "MIT OpenCourseWare", "source": "https://ocw.mit.edu/courses/18-06-linear-algebra-spring-2010/resources/lecture-1-the-geometry-of-linear-equations/"},{"subject":"money and banking","id":"fLBZb_v0ewM","title":"Money and Banking - Lecture 01","author":"Krassimir Petrov","source":"https://www.youtube.com/watch?v=fLBZb_v0ewM"}];
++const biliCatalog:[RegExp,string[]][]=[[/货币银行|货币金融|money and banking/i,['BV1LW4y187SV','BV1vJ411X7Cd']],[/动物生物化学|生物化学|biochemistry/i,['BV19o4y1y7DA','BV1FhPqzaEbd']],[/高等数学|高数|微积分|calculus/i,['BV1CAxaeHEeH']],[/线性代数|linear algebra/i,['BV1d7wAzsE8V']],[/概率|数理统计|probability|statistics/i,['BV1JXppejE8q']],[/python/i,['BV1qW4y1a7fU']]];
++const headers={'User-Agent':'ZhixueCourseLinks/1.0',Referer:'https://www.bilibili.com/'};
++async function readJson(fetcher:typeof fetch,url:URL,init:RequestInit={}){const response=await fetcher(url,{...init,signal:AbortSignal.timeout(7000),redirect:'error'});if(response.status===404||response.status===410)return {};if(!response.ok)throw new Error('platform_unavailable');return response.json() as Promise<Record<string,any>>;}
++async function biliDetail(query:string,id:string,fetcher:typeof fetch,checkedAt:string):Promise<Course|undefined>{
++ const url=new URL('https://api.bilibili.com/x/web-interface/view');url.searchParams.set('bvid',id);
++ let detail:Record<string,any>;try{detail=await readJson(fetcher,url,{headers});if(detail.code===-412||detail.code===-352)throw new Error('limited');}catch{const seed=reviewedBilibili.find(s=>s.id===id&&Date.now()-Date.parse(s.checkedAt)<30*86400000);if(!seed)return;detail={code:0,data:{bvid:id,title:seed.title,desc:seed.description,owner:{name:seed.author},reviewedAt:seed.checkedAt}};}const d=detail.data;
++ if(detail.code!==0||!d||d.bvid!==id||typeof d.title!=='string'||d.rights?.is_stein_gate===1)return;
++ const match=courseMatch(query,clean(d.title)+' '+clean(d.desc));if(!match)return;
++ return {id:'bili-'+id,title:clean(d.title),school:clean(d.owner?.name)||'B站创作者',teacher:clean(d.owner?.name)||'B站创作者',platform:'B站',language:'中文',url:'https://www.bilibili.com/video/'+id+'/',bvid:id,note:'同主题补充课程，不保证对应指定教材或版次；进入原站后可选择分集。',status:d.reviewedAt?'课程库已核对 · 播放以原站为准':'原站链接已核对',topics:[query],linkCheckedAt:d.reviewedAt||checkedAt,matchType:match};
++}
++async function bilibili(query:string,fetcher:typeof fetch,checkedAt:string):Promise<Course|undefined>{
++ const catalog=biliCatalog.find(([pattern])=>pattern.test(query))?.[1]||[];
++ // Known subjects can be resolved without relying on the rate-limited search endpoint.
++ for(const id of catalog){try{const course=await biliDetail(query,id,fetcher,checkedAt);if(course)return course;}catch{/* Try the next reviewed entry. */}}
++ const url=new URL('https://api.bilibili.com/x/web-interface/search/type');url.search=new URLSearchParams({search_type:'video',keyword:query+' 课程',page:'1',page_size:'10',order:'totalrank'}).toString();
++ const data=await readJson(fetcher,url,{headers});if(data.code!==0||!Array.isArray(data.data?.result))return;
++ const ids=[...new Set(data.data.result.filter((v:any)=>typeof v.bvid==='string'&&/^BV[\w]{10}$/.test(v.bvid)&&courseMatch(query,clean(v.title)+' '+clean(v.description))).map((v:any)=>v.bvid))].slice(0,3) as string[];
++ for(const id of ids){try{const course=await biliDetail(query,id,fetcher,checkedAt);if(course)return course;}catch{/* Broken links are never shown. */}}
++}
++async function youtube(query:string,fetcher:typeof fetch,checkedAt:string):Promise<Course|undefined>{
++ const subject=englishVideoQuery(query),seed=youtubeCatalog.find(s=>s.subject===subject);if(!seed)return;
++ const url=new URL('https://www.youtube.com/oembed');url.search=new URLSearchParams({url:'https://www.youtube.com/watch?v='+seed.id,format:'json'}).toString();
++ let data:Record<string,any>;let reviewed=false;try{data=await readJson(fetcher,url);}catch{if(Date.now()-Date.parse('2026-10-26T13:18:00Z')>=30*86400000)return;reviewed=true;data={type:'video',provider_name:'YouTube',author_name:seed.author,title:seed.title};}
++ if(data.type!=='video'||data.provider_name!=='YouTube'||data.author_name!==seed.author||!clean(data.title))return;
++ return {id:'youtube-'+seed.id,title:clean(data.title),school:seed.author,teacher:seed.author,platform:'YouTube',language:'英文',url:'https://www.youtube.com/watch?v='+seed.id,videoId:seed.id,official:seed.source,note:'按书名主题匹配的公开视频，作为补充参考，不保证对应指定教材或版次。',status:reviewed?'课程库已核对 · 同主题补充':'原站链接已核对 · 同主题补充',topics:[query],linkCheckedAt:reviewed?'2026-10-26T13:18:00Z':checkedAt,matchType:'subject'};
++}
++export async function recommendBookVideos(rawQuery:unknown,options:VideoSearchOptions={}):Promise<VideoRecommendations>{
++ const query=normalizeVideoQuery(rawQuery),fetcher=options.fetcher||fetch,checkedAt=new Date().toISOString();
++ const fresh=(platform:string)=>options.previous?.query===query?options.previous.courses.find(c=>c.platform===platform&&typeof c.linkCheckedAt==='string'&&Date.now()-Date.parse(c.linkCheckedAt)>=0&&Date.now()-Date.parse(c.linkCheckedAt)<86400000):undefined;
++ const settled=await Promise.allSettled([fresh('B站')?Promise.resolve(fresh('B站')):bilibili(query,fetcher,checkedAt),fresh('YouTube')?Promise.resolve(fresh('YouTube')):youtube(query,fetcher,checkedAt)]);
++ const courses:Course[]=[],statuses:Record<string,string>={};
++ ['B站','YouTube'].forEach((platform,i)=>{const result=settled[i];if(result.status==='fulfilled'&&result.value){courses.push(result.value);statuses[platform]=result.value.status.startsWith('课程库')?'已匹配课程库链接，最近核对：'+result.value.linkCheckedAt?.slice(0,10)+'。':'已匹配并核对原站视频链接。';}else statuses[platform]='暂未找到可核实的相关视频，或平台暂时无法访问。';});
++ return {query,courses,statuses,checkedAt,retryAfterSeconds:courses.length===2?86400:1800};
++}
+diff --git a/lib/reviewed-course-links.ts b/lib/reviewed-course-links.ts
+new file mode 100644
+--- /dev/null
++++ b/lib/reviewed-course-links.ts
+@@ -0,0 +1,52 @@
++// Public video links reviewed at publication from platform metadata/pages; no popularity statistics are stored.
++export const reviewedBilibili=[
++  {
++    "id": "BV19o4y1y7DA",
++    "title": "南京农业大学-动物生物化学",
++    "author": "给猪喂药的",
++    "description": "动物生物化学",
++    "checkedAt": "2026-10-26T13:18:00Z"
++  },
++  {
++    "id": "BV1CAxaeHEeH",
++    "title": "《高等数学》全程教学视频 2.0版【宋浩老师】",
++    "author": "宋浩老师官方",
++    "description": "高等数学 微积分",
++    "checkedAt": "2026-10-26T13:18:00Z"
++  },
++  {
++    "id": "BV1d7wAzsE8V",
++    "title": "《线性代数》教学视频 3.0版｜宋浩老师",
++    "author": "宋浩老师官方",
++    "description": "线性代数",
++    "checkedAt": "2026-10-26T13:18:00Z"
++  },
++  {
++    "id": "BV1JXppejE8q",
++    "title": "《概率论与数理统计》教学视频 2.0版本【宋浩老师】",
++    "author": "宋浩老师官方",
++    "description": "概率论 数理统计",
++    "checkedAt": "2026-10-26T13:18:00Z"
++  },
++  {
++    "id": "BV1qW4y1a7fU",
++    "title": "黑马程序员python零基础全套教程，8天python从入门到精通，学python看这套就够了",
++    "author": "黑马程序员",
++    "description": "Python入门",
++    "checkedAt": "2026-10-26T13:18:00Z"
++  },
++  {
++    "id": "BV1LW4y187SV",
++    "title": "东北财经大学 | 范立夫老师教你《货币银行学》！",
++    "author": "中国大学MOOC",
++    "description": "货币银行学",
++    "checkedAt": "2026-10-26T13:18:00Z"
++  },
++  {
++    "id": "BV1vJ411X7Cd",
++    "title": "东北财经大学-货币银行学（国家级精品课）",
++    "author": "五味666",
++    "description": "货币银行学",
++    "checkedAt": "2026-10-26T13:18:00Z"
++  }
++];
+diff --git a/tests/course-recommendations.test.mjs b/tests/course-recommendations.test.mjs
+new file mode 100644
+--- /dev/null
++++ b/tests/course-recommendations.test.mjs
+@@ -0,0 +1,24 @@
++import assert from 'node:assert/strict';
++import {recommendBookVideos,courseMatch} from '../lib/course-recommendations.ts';
++import {POST} from '../app/api/courses/route.ts';
++let calls=[];
++const transport=async(raw)=>{const u=new URL(raw);calls.push(u.href);
++ if(u.hostname==='api.bilibili.com'&&u.pathname.endsWith('/view'))return Response.json({code:0,data:{bvid:u.searchParams.get('bvid'),title:'南京农业大学-动物生物化学',desc:'动物生物化学课程',owner:{name:'公开课程'},stat:{like:99999}}});
++ if(u.hostname==='www.youtube.com'&&u.pathname==='/oembed')return Response.json({type:'video',provider_name:'YouTube',author_name:'MIT OpenCourseWare',title:'12. Carbohydrates/Introduction to Membranes'});
++ throw new Error('unexpected network');
++};
++const data=await recommendBookVideos('动物生物化学',{fetcher:transport});
++assert.equal(data.courses.length,2);assert.equal(new Set(data.courses.map(c=>c.platform)).size,2);
++assert.ok(data.courses.every(c=>c.linkCheckedAt&&!('likeCount' in c)&&!('viewCount' in c)));
++assert.ok(calls.every(u=>!u.includes('googleapis')&&!u.includes('key=')));
++assert.equal(data.courses[0].url,'https://www.bilibili.com/video/BV19o4y1y7DA/');
++const before=calls.length;await recommendBookVideos('动物生物化学',{fetcher:transport,previous:data});assert.equal(calls.length,before);
++const failed=await recommendBookVideos('完全未知的冷门教材',{fetcher:async()=>new Response(null,{status:412})});
++assert.equal(failed.courses.length,0);assert.ok(!JSON.stringify(failed).includes('search.bilibili.com'));
++assert.equal(courseMatch('动物生物化学','烹饪方法'),null);
++let checked=0;const partial=await recommendBookVideos('动物生物化学',{fetcher:async u=>{if(new URL(u).hostname==='www.youtube.com')return new Response(null,{status:404});checked++;return transport(u);}});
++assert.equal(partial.courses.length,1);assert.ok(checked>0);
++const wrongOwner=await recommendBookVideos('动物生物化学',{fetcher:async u=>new URL(u).hostname==='www.youtube.com'?Response.json({type:'video',provider_name:'YouTube',author_name:'Other account',title:'unrelated'}):transport(u)});assert.equal(wrongOwner.courses.length,1);
++const r=await POST(new Request('https://local/api/courses',{method:'POST',body:JSON.stringify({query:'动物生物化学',youtubeKey:'must-not-use'})}),{COURSE_LOOKUP:async()=>data});assert.equal(r.status,200);assert.equal((await r.json()).courses.length,2);
++assert.equal((await POST(new Request('https://local/api/courses',{method:'POST',body:'{}'}))).status,400);
++console.log('Book recommendations: direct links, no API keys/likes, relevance, failed platforms, cache reuse and input validation passed');
+diff --git a/tests/commerce.test.mjs b/tests/commerce.test.mjs
+--- a/tests/commerce.test.mjs
++++ b/tests/commerce.test.mjs
+@@ -9,7 +9,7 @@
+  const db=new DatabaseSync(':memory:');let alarm=null;
+  const storage={sql:{exec(sql,...args){const stmt=db.prepare(sql);const rows=stmt.all(...args);return {toArray:()=>rows};}},transactionSync(fn){db.exec('BEGIN IMMEDIATE');try{const out=fn();db.exec('COMMIT');return out;}catch(e){db.exec('ROLLBACK');throw e;}},async setAlarm(t){alarm=t;},async getAlarm(){return alarm;}};
+  const ctx={storage};
+- const env={DEEPSEEK_API_KEY:'test-server-key-never-expose',COMMERCE_ADMIN_KEY:adminKey,MODEL_FETCH:async(url,init)=>{if(url.endsWith('/models'))return Response.json({data:[{id:'deepseek-flash'}]});if(url.endsWith('/user/balance'))return Response.json({is_available:true});modelCalls++;assert.equal(url,'https://api.deepseek.com/chat/completions');const body=JSON.parse(init.body);assert.equal(body.thinking.type,'disabled');assert.equal(body.max_tokens,7000);return Response.json({usage:{prompt_tokens:1000,completion_tokens:2000},choices:[{finish_reason:'stop',message:{content:JSON.stringify({lesson:validLesson})}}]});},...options};
++ const env={DEEPSEEK_API_KEY:'test-server-key-never-expose',COMMERCE_ADMIN_KEY:adminKey,VIDEO_FETCH:async()=>new Response(null,{status:503}),MODEL_FETCH:async(url,init)=>{if(url.endsWith('/models'))return Response.json({data:[{id:'deepseek-flash'}]});if(url.endsWith('/user/balance'))return Response.json({is_available:true});modelCalls++;assert.equal(url,'https://api.deepseek.com/chat/completions');const body=JSON.parse(init.body);assert.equal(body.thinking.type,'disabled');assert.equal(body.max_tokens,7000);return Response.json({usage:{prompt_tokens:1000,completion_tokens:2000},choices:[{finish_reason:'stop',message:{content:JSON.stringify({lesson:validLesson})}}]});},...options};
+  return {store:new BookCommerce(ctx,env),ctx,env,db,get alarm(){return alarm;}};
+ }
+ function req(path,method='GET',body,token=''){return new Request('https://internal'+path,{method,headers:{'Content-Type':'application/json','X-Client-Key':Math.random().toString(36),...(token?{Authorization:'Bearer '+token}:{})},...(body!==undefined?{body:JSON.stringify(body)}:{})});}
+@@ -62,3 +62,10 @@
+ assert.equal(ur.spent_micro,callReservation(readBook(book),0)*2,'Uncertain provider requests keep their full reservation');assert.equal(ur.status,'paused');
+ const invalid=harness({MODEL_FETCH:async()=>new Response(null,{status:401})});assert.equal((await result(invalid,'/config')).data.acceptingOrders,false);assert.equal((await result(invalid,'/orders','POST',book)).status,503);
+ console.log(JSON.stringify({credentialValidation:'passed',pricing:'passed',paymentClaimCannotUnlock:'passed',adminAuthorization:'passed',paymentIdempotency:'passed',buyerIsolation:'passed',persistence:'passed',wholeBookExport:'passed',dailyBudget:'passed',orderBudget:'passed',boundedRetry:'passed',secretsNotExposed:'passed',providerCalls:'mocked only'}));
++
++let videoCalls=0;
++const vh=harness({VIDEO_FETCH:async raw=>{videoCalls++;const u=new URL(raw);if(u.hostname==='www.youtube.com')return Response.json({type:'video',provider_name:'YouTube',author_name:'MIT OpenCourseWare',title:'Python lecture'});return Response.json({code:0,data:{bvid:u.searchParams.get('bvid'),title:'Python教程',owner:{name:'公开课'}}});}});
++const rec1=await result(vh,'/recommendations','POST',{query:'Python入门'});assert.equal(rec1.data.courses.length,2);const firstVideoCalls=videoCalls;
++const reconstructed=new BookCommerce(vh.ctx,vh.env);await reconstructed.fetch(req('/recommendations','POST',{query:'Python入门'}));assert.equal(videoCalls,firstVideoCalls,'Video cache survives Durable Object reconstruction');
++assert.equal((await result(vh,'/recommendations','POST',{query:''})).status,400);
++console.log('Book video cache persistence and invalid-query checks passed');
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -12,7 +12,7 @@
+     "start": "node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js dev --config dist/server/wrangler.json --local --persist-to .wrangler/state --ip 127.0.0.1 --inspector-port 0",
+     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+     "db:generate": "drizzle-kit generate",
+-    "test": "node --import ./tests/typescript-loader.mjs tests/learning.test.mjs && node --import ./tests/typescript-loader.mjs tests/links.test.mjs && node --import ./tests/typescript-loader.mjs tests/mindmap.test.mjs && node --import ./tests/typescript-loader.mjs tests/library.test.mjs && node --import ./tests/typescript-loader.mjs tests/contents.test.mjs && node --import ./tests/typescript-loader.mjs tests/subjects.test.mjs && node --import ./tests/typescript-loader.mjs tests/contents-update.test.mjs && node --import ./tests/typescript-loader.mjs tests/runtime-urls.test.mjs && node --import ./tests/typescript-loader.mjs tests/api-worker.test.mjs && node --import ./tests/typescript-loader.mjs tests/model-settings.test.mjs && node --import ./tests/typescript-loader.mjs tests/book-import.test.mjs && node --import ./tests/typescript-loader.mjs tests/library-persistence.test.mjs && node --import ./tests/typescript-loader.mjs tests/book-pricing.test.mjs && node --import ./tests/commerce-loader.mjs tests/commerce.test.mjs",
++    "test": "node --import ./tests/typescript-loader.mjs tests/learning.test.mjs && node --import ./tests/typescript-loader.mjs tests/links.test.mjs && node --import ./tests/typescript-loader.mjs tests/mindmap.test.mjs && node --import ./tests/typescript-loader.mjs tests/library.test.mjs && node --import ./tests/typescript-loader.mjs tests/contents.test.mjs && node --import ./tests/typescript-loader.mjs tests/subjects.test.mjs && node --import ./tests/typescript-loader.mjs tests/contents-update.test.mjs && node --import ./tests/typescript-loader.mjs tests/runtime-urls.test.mjs && node --import ./tests/typescript-loader.mjs tests/api-worker.test.mjs && node --import ./tests/typescript-loader.mjs tests/model-settings.test.mjs && node --import ./tests/typescript-loader.mjs tests/book-import.test.mjs && node --import ./tests/typescript-loader.mjs tests/library-persistence.test.mjs && node --import ./tests/typescript-loader.mjs tests/book-pricing.test.mjs && node --import ./tests/commerce-loader.mjs tests/commerce.test.mjs && node --import ./tests/typescript-loader.mjs tests/course-recommendations.test.mjs",
+     "build:pages": "vite build --config vite.pages.config.ts",
+     "preview:pages": "vite preview --config vite.pages.config.ts"
+   },
