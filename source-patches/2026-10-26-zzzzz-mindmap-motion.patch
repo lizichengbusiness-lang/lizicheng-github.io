@@ -1,0 +1,204 @@
+diff --git a/components/KnowledgeAtlas.tsx b/components/KnowledgeAtlas.tsx
+--- a/components/KnowledgeAtlas.tsx
++++ b/components/KnowledgeAtlas.tsx
+@@ -2,52 +2,53 @@
+ import {useEffect,useId,useMemo,useRef,useState,type PointerEvent} from 'react';
+ import {ArrowLeft,BookOpen,Check,ChevronRight,Focus,Home,Layers,Maximize,Minus,Plus,Search,X} from 'lucide-react';
+ import type {Topic} from '@/lib/learning-data';
+-import {edgeCurve,makeMindmap,mapBounds,sameFocus,type MapFocus,type MapNode} from '@/lib/mindmap-layout';
++import {edgeCurve,makeMindmap,sameFocus,type MapFocus,type MapNode} from '@/lib/mindmap-layout';
+ 
+-type Camera={x:number;y:number;k:number};
++import {useMindmapMotion} from './useMindmapMotion';
++import {edgeIdentity,fitMapCamera,type MapCamera as Camera} from '@/lib/mindmap-motion';
+ const BOOK:MapFocus={kind:'book'};
+ const COLORS=['#58748f','#a67c3d','#157b78','#7b678f'];
+ export default function KnowledgeAtlas({topics,selected,onSelect,onRead,learned,bookTitle,fromContents}:{topics:Topic[];selected:string;onSelect:(id:string)=>void;onRead:(id:string)=>void;learned:string[];bookTitle:string;fromContents:boolean}){
+  const [focus,setFocus]=useState<MapFocus>(BOOK),[history,setHistory]=useState<MapFocus[]>([]),[query,setQuery]=useState(''),[concept,setConcept]=useState<MapNode|null>(null);
+- const [size,setSize]=useState({width:1000,height:620}),[camera,setCamera]=useState<Camera>({x:0,y:0,k:1}),[panning,setPanning]=useState(false);
++ const [size,setSize]=useState({width:1000,height:620}),[panning,setPanning]=useState(false);
+  const viewport=useRef<HTMLDivElement>(null),gesture=useRef<{x:number;y:number;camera:Camera}|null>(null);
+  const marker=useId().replace(/:/g,''),groups=useMemo(()=>[...new Set(topics.map(t=>t.group))],[topics]);
+  const layout=useMemo(()=>makeMindmap(topics,focus,bookTitle,fromContents),[topics,focus,bookTitle,fromContents]);
+- const byId=new Map(layout.nodes.map(n=>[n.id,n])),current=focus.kind==='topic'?topics.find(t=>t.id===focus.id):undefined;
++ const motion=useMindmapMotion(layout,size),camera=motion.camera;
++ const byId=new Map(motion.nodes.map(n=>[n.id,n])),current=focus.kind==='topic'?topics.find(t=>t.id===focus.id):undefined;
+  const chapter=focus.kind==='chapter'?focus.id:current?.group;
+  const matches=query.trim()?[
+   ...groups.filter(g=>g.toLowerCase().includes(query.toLowerCase())).map(g=>({title:g,subtitle:fromContents?'章节':'学习模块',target:{kind:'chapter',id:g} as MapFocus})),
+   ...topics.filter(t=>t.title.toLowerCase().includes(query.toLowerCase())).map(t=>({title:t.title,subtitle:t.group,target:{kind:'topic',id:t.id} as MapFocus})),
+  ]:[];
+ 
+- function fit(){const bounds=mapBounds(layout.nodes),k=Math.min(1.32,(size.width-28)/bounds.width,(size.height-34)/bounds.height);setCamera({k,x:(size.width-bounds.width*k)/2-bounds.x*k,y:(size.height-bounds.height*k)/2-bounds.y*k});}
++ function fit(){motion.moveCamera(fitMapCamera(layout.nodes,size.width,size.height));}
+  useEffect(()=>{const element=viewport.current;if(!element)return;const observer=new ResizeObserver(([entry])=>setSize({width:entry.contentRect.width,height:entry.contentRect.height}));observer.observe(element);return()=>observer.disconnect();},[]);
+- useEffect(()=>{fit();},[layout,size.width,size.height]); // New focus always fits its own subgraph.
+- useEffect(()=>{const element=viewport.current;if(!element)return;const handler=(event:WheelEvent)=>{if(!event.ctrlKey&&!event.metaKey)return;event.preventDefault();const rect=element.getBoundingClientRect(),px=event.clientX-rect.left,py=event.clientY-rect.top;setCamera(c=>{const k=Math.min(2.5,Math.max(.18,c.k*Math.exp(-event.deltaY*.004))),ratio=k/c.k;return{k,x:px-(px-c.x)*ratio,y:py-(py-c.y)*ratio};});};element.addEventListener('wheel',handler,{passive:false});return()=>element.removeEventListener('wheel',handler);},[]);
++ useEffect(()=>{const element=viewport.current;if(!element)return;const handler=(event:WheelEvent)=>{if(!event.ctrlKey&&!event.metaKey)return;event.preventDefault();const rect=element.getBoundingClientRect(),px=event.clientX-rect.left,py=event.clientY-rect.top;motion.moveCamera(c=>{const k=Math.min(2.5,Math.max(.18,c.k*Math.exp(-event.deltaY*.004))),ratio=k/c.k;return{k,x:px-(px-c.x)*ratio,y:py-(py-c.y)*ratio};},false);};element.addEventListener('wheel',handler,{passive:false});return()=>element.removeEventListener('wheel',handler);},[motion.moveCamera]);
+  function navigate(next:MapFocus){setQuery('');if(sameFocus(next,focus))return;setHistory(v=>[...v,focus]);setFocus(next);setConcept(null);if(next.kind==='topic')onSelect(next.id);}
+  function overview(){setFocus(BOOK);setHistory([]);setQuery('');setConcept(null);}
+  function back(){const last=history.at(-1);if(!last){overview();return;}setFocus(last);setHistory(v=>v.slice(0,-1));setConcept(null);setQuery('');if(last.kind==='topic')onSelect(last.id);}
+- function zoom(factor:number){setCamera(c=>{const k=Math.min(2.5,Math.max(.18,c.k*factor)),ratio=k/c.k;return{k,x:size.width/2-(size.width/2-c.x)*ratio,y:size.height/2-(size.height/2-c.y)*ratio};});}
+- function down(event:PointerEvent<HTMLDivElement>){if(event.button!==0||(event.target as Element).closest('button'))return;gesture.current={x:event.clientX,y:event.clientY,camera};event.currentTarget.setPointerCapture(event.pointerId);setPanning(true);}
+- function move(event:PointerEvent<HTMLDivElement>){const start=gesture.current;if(start)setCamera({...start.camera,x:start.camera.x+event.clientX-start.x,y:start.camera.y+event.clientY-start.y});}
++ function zoom(factor:number){const c=motion.targetCamera(),k=Math.min(2.5,Math.max(.18,c.k*factor)),ratio=k/c.k;motion.moveCamera({k,x:size.width/2-(size.width/2-c.x)*ratio,y:size.height/2-(size.height/2-c.y)*ratio});}
++ function down(event:PointerEvent<HTMLDivElement>){if(event.button!==0||(event.target as Element).closest('button'))return;gesture.current={x:event.clientX,y:event.clientY,camera:motion.interruptCamera()};event.currentTarget.setPointerCapture(event.pointerId);setPanning(true);}
++ function move(event:PointerEvent<HTMLDivElement>){const start=gesture.current;if(start)motion.moveCamera({...start.camera,x:start.camera.x+event.clientX-start.x,y:start.camera.y+event.clientY-start.y},false);}
+  function up(event:PointerEvent<HTMLDivElement>){gesture.current=null;setPanning(false);if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);}
+  function nodeClick(node:MapNode){if(node.kind==='concept'){setConcept(node);return;}if(node.target)navigate(node.target);}
+- return <section className="mindmap" aria-label="交互式知识思维导图">
++ return <section className="mindmap motion-ready" aria-label="交互式知识思维导图">
+   <div className="mindmap-toolbar">
+    <nav className="map-breadcrumb" aria-label="思维导图层级"><button onClick={overview} aria-label="返回全书导图"><Home size={15}/><span>全书</span></button>{chapter&&<><ChevronRight size={13}/><button onClick={()=>navigate({kind:'chapter',id:chapter})} aria-current={focus.kind==='chapter'?'page':undefined}>{chapter}</button></>}{current&&<><ChevronRight size={13}/><span aria-current="page">{current.title}</span></>}</nav>
+    <div className="mindmap-search"><Search size={15}/><input aria-label="查找并聚焦章节或知识点" placeholder="查找章节或知识点" value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&matches[0]){e.preventDefault();navigate(matches[0].target);}if(e.key==='Escape')setQuery('');}}/>{query&&<button aria-label="清除图谱搜索" onClick={()=>setQuery('')}><X size={13}/></button>}
+     {query.trim()&&<div className="map-search-results"><span>{matches.length?`找到 ${matches.length} 项，点击聚焦`:'没有匹配的章节或知识点'}</span>{matches.slice(0,10).map((m,i)=><button key={i} onClick={()=>navigate(m.target)}><strong>{m.title}</strong><small>{m.subtitle}</small><Focus size={15}/></button>)}{matches.length>10&&<small>请输入更完整的名称缩小范围。</small>}</div>}
+    </div>
+   </div>
+-  <div className="map-heading"><div><strong>{layout.focusTitle}</strong><p aria-live="polite">{layout.description}</p></div><div className="map-navigation">{focus.kind!=='book'&&<button className="quiet-button" onClick={back}><ArrowLeft size={15}/>返回上一级</button>}{focus.kind==='book'?<button className="quiet-button" disabled={!topics.some(t=>t.id===selected)} onClick={()=>navigate({kind:'topic',id:selected})}><Focus size={15}/>聚焦当前知识点</button>:<button className="quiet-button" onClick={overview}><Layers size={15}/>返回全图</button>}</div></div>
++  <div className="map-heading"><div className="map-heading-copy" key={layout.focusTitle}><span className="map-level-badge">{focus.kind==='book'?'全书总览':focus.kind==='chapter'?'章节展开':'知识点聚焦'}</span><strong>{layout.focusTitle}</strong><p aria-live="polite">{layout.description}</p></div><div className="map-navigation">{focus.kind!=='book'&&<button className="quiet-button" onClick={back}><ArrowLeft size={15}/>返回上一级</button>}{focus.kind==='book'?<button className="quiet-button" disabled={!topics.some(t=>t.id===selected)} onClick={()=>navigate({kind:'topic',id:selected})}><Focus size={15}/>聚焦当前知识点</button>:<button className="quiet-button" onClick={overview}><Layers size={15}/>返回全图</button>}</div></div>
+   <div className="map-legend"><span title="粗实线、加厚左边与近方角表示章节层级"><i className="map-legend-chapter"/>{fromContents?'章节':'模块'} · 粗框</span><span title="细实线胶囊边框表示具体知识点，聚焦时仍保留细边框"><i className="map-legend-topic"/>知识点 · 细框</span><span title="虚线胶囊边框表示本节术语，可点击查看释义"><i className="map-legend-concept"/>概念 · 虚线</span><span><i className="map-legend-edge"/>前置 → 后续</span><span><Check size={12}/>已理解</span></div>
+-  <div className={`mindmap-viewport ${panning?'is-panning':''}`} ref={viewport} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onKeyDown={e=>{if(e.key==='Escape'&&focus.kind!=='book')back();}}>
++  <div className={`mindmap-viewport ${panning?'is-panning':''} ${motion.moving?'is-transitioning':''}`} ref={viewport} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onKeyDown={e=>{if(e.key==='Escape'&&focus.kind!=='book')back();}}>
+    <svg viewBox={`0 0 ${size.width} ${size.height}`} role="group" aria-label={`${layout.focusTitle}，可点击节点聚焦`}>
+     <defs><marker id={`${marker}-arrow`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="#58748f" strokeWidth="1.5"/></marker></defs>
+     <g className={`mindmap-world ${panning?'dragging':''}`} style={{transform:`translate(${camera.x}px,${camera.y}px) scale(${camera.k})`}}>
+-     {layout.edges.map((edge,i)=>{const a=byId.get(edge.from),b=byId.get(edge.to);if(!a||!b)return null;const relation=edge.kind==='before'||edge.kind==='after';return <path key={`${focus.kind}-${i}`} className={`map-edge edge-${edge.kind}`} d={edgeCurve(a,b,edge.kind==='concept')} stroke={relation?'#58748f':COLORS[edge.tone]} markerEnd={relation?`url(#${marker}-arrow)`:undefined} fill="none"/>;})}
+-     {layout.nodes.map(node=><foreignObject x={node.x} y={node.y} width={node.width} height={node.height} key={node.id}>
+-      <button className={`mind-node mind-${node.kind} tone-${node.tone} ${node.central?'central':''} ${node.kind==='chapter'&&node.height<90?'compact':''} ${node.topicId&&learned.includes(node.topicId)?'understood':''}`} onClick={()=>nodeClick(node)} aria-label={`${node.kind==='concept'?'查看概念释义':node.central?'当前节点':'聚焦'}：${node.title}`} aria-current={node.central?'true':undefined} title={node.kind==='concept'?node.meaning:node.title}>
++     {motion.edges.map(edge=>{const a=byId.get(edge.from),b=byId.get(edge.to);if(!a||!b)return null;const relation=edge.kind==='before'||edge.kind==='after';return <path key={edgeIdentity(edge)} className={`map-edge edge-${edge.kind}`} style={{opacity:edge.opacity*(relation?.8:edge.kind==='concept'?.38:.58)}} d={edgeCurve(a,b,edge.kind==='concept')} stroke={relation?'#58748f':COLORS[edge.tone]} markerEnd={relation?`url(#${marker}-arrow)`:undefined} fill="none"/>;})}
++     {motion.nodes.map(node=><foreignObject x={node.x} y={node.y} width={node.width} height={node.height} key={node.id} style={{opacity:node.opacity,pointerEvents:node.exiting?'none':undefined}} aria-hidden={node.exiting||undefined}>
++      <button className={`mind-node mind-${node.kind} tone-${node.tone} ${node.central?'central':''} ${node.kind==='chapter'&&node.height<90?'compact':''} ${node.topicId&&learned.includes(node.topicId)?'understood':''}`} disabled={node.exiting||node.opacity<.2} onClick={()=>nodeClick(node)} aria-label={`${node.kind==='concept'?'查看概念释义':node.central?'当前节点':'聚焦'}：${node.title}`} aria-current={node.central?'true':undefined} title={node.kind==='concept'?node.meaning:node.title}>
+        <span className="mind-node-kind">{node.kind==='book'?<BookOpen size={15}/>:node.kind==='chapter'?<Layers size={14}/>:node.topicId&&learned.includes(node.topicId)?<Check size={14}/>:<span className="mind-node-dot"/>}<span>{node.kind==='book'?'学习全貌':node.kind==='chapter'?(fromContents?'目录章节':'学习模块'):node.subtitle}</span>{!node.central&&node.kind!=='concept'&&<Focus size={13}/>}</span>
+        <strong>{node.title}</strong>{(node.kind==='chapter'||node.kind==='book')&&<small>{node.subtitle}{!node.central&&node.kind==='chapter'&&!node.subtitle.includes('点击')?' · 点击展开':''}</small>}
+       </button>
+diff --git a/components/useMindmapMotion.ts b/components/useMindmapMotion.ts
+new file mode 100644
+--- /dev/null
++++ b/components/useMindmapMotion.ts
+@@ -0,0 +1,37 @@
++'use client';
++import {useCallback,useEffect,useLayoutEffect,useRef,useState} from 'react';
++import type {MapLayout} from '@/lib/mindmap-layout';
++import {easeMap,fitMapCamera,interpolateCamera,planMapTransition,sampleMapTransition,settledMapScene,type MapCamera,type MapScene} from '@/lib/mindmap-motion';
++type NodeMotion={plan:ReturnType<typeof planMapTransition>;layout:MapLayout;start:number;duration:number};
++type CameraMotion={from:MapCamera;to:MapCamera;start:number;duration:number};
++export function useMindmapMotion(layout:MapLayout,size:{width:number;height:number}){
++ const [scene,setScene]=useState<MapScene>(()=>settledMapScene(layout,fitMapCamera(layout.nodes,size.width,size.height))),[moving,setMoving]=useState(false);
++ const current=useRef(scene),frame=useRef(0),nodes=useRef<NodeMotion|null>(null),camera=useRef<CameraMotion|null>(null),mounted=useRef(true),initialized=useRef(false),reduced=useRef(typeof window!=='undefined'&&window.matchMedia('(prefers-reduced-motion: reduce)').matches);
++ const commit=useCallback((next:MapScene)=>{current.current=next;if(mounted.current)setScene(next);},[]);
++ const tick=useCallback(function update(now:number){
++  frame.current=0;let next=current.current;
++  if(nodes.current){const job=nodes.current,p=Math.min(1,(now-job.start)/job.duration);next=p>=1?settledMapScene(job.layout,next.camera):{...sampleMapTransition(job.plan,p),camera:next.camera};if(p>=1)nodes.current=null;}
++  if(camera.current){const job=camera.current,p=Math.min(1,(now-job.start)/job.duration);next={...next,camera:interpolateCamera(job.from,job.to,easeMap(p))};if(p>=1)camera.current=null;}
++  commit(next);
++  if(nodes.current||camera.current)frame.current=requestAnimationFrame(update);else if(mounted.current)setMoving(false);
++ },[commit]);
++ const schedule=useCallback(()=>{if(!frame.current)frame.current=requestAnimationFrame(tick);setMoving(true);},[tick]);
++ useLayoutEffect(()=>{
++  const target=fitMapCamera(layout.nodes,size.width,size.height),now=performance.now();
++  if(!initialized.current||reduced.current){initialized.current=true;nodes.current=null;camera.current=null;commit(settledMapScene(layout,target));setMoving(false);return;}
++  nodes.current={plan:planMapTransition(current.current,layout),layout,start:now,duration:440};
++  camera.current={from:current.current.camera,to:target,start:now,duration:440};schedule();
++ },[layout,size.width,size.height,commit,schedule]);
++ useEffect(()=>{mounted.current=true;const preference=window.matchMedia('(prefers-reduced-motion: reduce)');
++  const change=()=>{reduced.current=preference.matches;if(preference.matches){const job=nodes.current,target=camera.current?.to||current.current.camera;nodes.current=null;camera.current=null;cancelAnimationFrame(frame.current);frame.current=0;commit(job?settledMapScene(job.layout,target):{...current.current,camera:target});setMoving(false);}};
++  preference.addEventListener('change',change);return()=>{mounted.current=false;preference.removeEventListener('change',change);cancelAnimationFrame(frame.current);frame.current=0;nodes.current=null;camera.current=null;};
++ },[commit]);
++ const moveCamera=useCallback((update:MapCamera|((before:MapCamera)=>MapCamera),animate=true)=>{
++  const target=typeof update==='function'?update(current.current.camera):update;
++  if(!animate||reduced.current){camera.current=null;commit({...current.current,camera:target});if(!nodes.current)setMoving(false);return;}
++  camera.current={from:current.current.camera,to:target,start:performance.now(),duration:260};schedule();
++ },[commit,schedule]);
++ const interruptCamera=useCallback(()=>{camera.current=null;return current.current.camera;},[]);
++ const targetCamera=useCallback(()=>camera.current?.to||current.current.camera,[]);
++ return{...scene,moving,moveCamera,interruptCamera,targetCamera};
++}
+diff --git a/lib/mindmap-layout.ts b/lib/mindmap-layout.ts
+--- a/lib/mindmap-layout.ts
++++ b/lib/mindmap-layout.ts
+@@ -34,7 +34,7 @@
+  before.forEach((t,i)=>{const id=topic(t,165,cy+(i-(before.length-1)/2)*96,'前置 · 建议先学');link(id,root,'before',tone(t.group));});
+  after.forEach((t,i)=>{const id=topic(t,895,cy+(i-(after.length-1)/2)*96,'后续 · 接着学习');link(root,id,'after',tone(t.group));});
+  terms.forEach((t,i)=>{const columns=Math.min(4,terms.length),row=Math.floor(i/columns),rowCount=Math.min(columns,terms.length-row*columns),x=530+(i%columns-(rowCount-1)/2)*253,y=cy+bodyHeight/2+93+row*104;
+-  const id=place({id:`concept:${i}`,kind:'concept',title:t.name,subtitle:'本节概念 · 点击释义',tone:tone(current.group),width:224,height:76,meaning:t.meaning},x,y);link(root,id,'concept',tone(current.group));
++  const id=place({id:`concept:${current.id}:${i}`,kind:'concept',title:t.name,subtitle:'本节概念 · 点击释义',tone:tone(current.group),width:224,height:76,meaning:t.meaning},x,y);link(root,id,'concept',tone(current.group));
+  });
+  return{nodes,edges,focusTitle:current.title,description:`已聚焦知识点，仅显示所属章节、${before.length} 个前置、${after.length} 个后续知识点${terms.length?`和 ${terms.length} 个本节概念`:''}。`};
+ }
+diff --git a/lib/mindmap-motion.ts b/lib/mindmap-motion.ts
+new file mode 100644
+--- /dev/null
++++ b/lib/mindmap-motion.ts
+@@ -0,0 +1,29 @@
++import {mapBounds,type MapNode,type MapEdge,type MapLayout} from './mindmap-layout';
++export type MapCamera={x:number;y:number;k:number};
++export type MovingNode=MapNode&{opacity:number;exiting?:boolean};
++export type MovingEdge=MapEdge&{opacity:number;exiting?:boolean};
++export type MapScene={nodes:MovingNode[];edges:MovingEdge[];camera:MapCamera};
++export const edgeIdentity=(edge:MapEdge)=>`${edge.kind}:${edge.from}->${edge.to}`;
++export const easeMap=(t:number)=>{const n=Math.min(1,Math.max(0,t));return n*n*(3-2*n);};
++const mix=(a:number,b:number,t:number)=>a+(b-a)*t;
++export function interpolateCamera(a:MapCamera,b:MapCamera,t:number):MapCamera{return{x:mix(a.x,b.x,t),y:mix(a.y,b.y,t),k:mix(a.k,b.k,t)};}
++export function fitMapCamera(nodes:MapNode[],width:number,height:number):MapCamera{
++ const bounds=mapBounds(nodes),k=Math.max(.02,Math.min(1.32,(Math.max(1,width)-28)/bounds.width,(Math.max(1,height)-58)/bounds.height));
++ return{k,x:(width-bounds.width*k)/2-bounds.x*k,y:(height-bounds.height*k)/2-bounds.y*k};
++}
++export function settledMapScene(layout:MapLayout,camera:MapCamera):MapScene{return{nodes:layout.nodes.map(n=>({...n,opacity:1})),edges:layout.edges.map(e=>({...e,opacity:1})),camera};}
++export function planMapTransition(before:MapScene,layout:MapLayout){
++ const previous=new Map(before.nodes.map(n=>[n.id,n])),next=new Map(layout.nodes.map(n=>[n.id,n]));
++ const root=layout.nodes.find(n=>n.central)||layout.nodes[0],origin=(root&&previous.get(root.id))||before.nodes.find(n=>n.central&&!n.exiting)||root;
++ const collapse=(node:MapNode,anchor:MapNode|undefined)=>({...node,x:(anchor?anchor.x+anchor.width/2:node.x+node.width/2)-node.width*.44,y:(anchor?anchor.y+anchor.height/2:node.y+node.height/2)-node.height*.44,width:node.width*.88,height:node.height*.88,opacity:0});
++ const nodes=layout.nodes.map(node=>({from:previous.get(node.id)||collapse(node,origin),to:{...node,opacity:1},exiting:false}));
++ for(const node of before.nodes)if(!next.has(node.id)&&node.opacity>.001)nodes.push({from:node,to:collapse(node,root),exiting:true});
++ const oldEdges=new Map(before.edges.map(e=>[edgeIdentity(e),e])),keys=new Set(layout.edges.map(edgeIdentity));
++ const edges=layout.edges.map(edge=>({from:oldEdges.get(edgeIdentity(edge))?.opacity||0,to:1,edge,exiting:false}));
++ for(const edge of before.edges)if(!keys.has(edgeIdentity(edge))&&edge.opacity>.001)edges.push({from:edge.opacity,to:0,edge,exiting:true});
++ return{nodes,edges};
++}
++export function sampleMapTransition(plan:ReturnType<typeof planMapTransition>,progress:number){
++ const p=Math.min(1,Math.max(0,progress)),t=easeMap(p);
++ return{nodes:plan.nodes.map(({from,to,exiting})=>({...to,x:mix(from.x,to.x,t),y:mix(from.y,to.y,t),width:mix(from.width,to.width,t),height:mix(from.height,to.height,t),opacity:mix(from.opacity,to.opacity,easeMap(Math.min(1,p*(exiting?1.7:1)))),exiting})),edges:plan.edges.map(({edge,from,to,exiting})=>({...edge,opacity:mix(from,to,easeMap(Math.min(1,p*(exiting?1.7:1)))),exiting}))};
++}
+diff --git a/app/interaction-theme.css b/app/interaction-theme.css
+--- a/app/interaction-theme.css
++++ b/app/interaction-theme.css
+@@ -268,3 +268,6 @@
+ @media (prefers-reduced-motion: reduce) {
+   button, a { transition: none; }
+ }
++
++/* Geometry and camera share a frame clock, so curves stay attached while focusing. */
++.mindmap.motion-ready{border-radius:18px;box-shadow:0 8px 30px #24475a08;border-color:#d6e4e5}.motion-ready .mindmap-toolbar{border-radius:18px 18px 0 0;background:linear-gradient(105deg,#fff,#f7fbfa)}.motion-ready .mindmap-world{transition:none;will-change:transform}.motion-ready .mindmap-viewport{background-color:#f8fbfa;background-image:radial-gradient(ellipse at 50% 35%,#e5f1ed80,transparent 65%),radial-gradient(#8caaa72b .75px,transparent .75px);background-size:auto,24px 24px}.motion-ready foreignObject{overflow:visible}.motion-ready .mind-node{transition:background-color 160ms,border-color 160ms,box-shadow 160ms;box-shadow:0 4px 12px #2148460a}.motion-ready .mind-node:hover{box-shadow:0 7px 18px #21484618}.motion-ready .mind-node:disabled{opacity:1;cursor:default}.motion-ready .mind-book.central{background:linear-gradient(135deg,#183c49,#2b6065);border-color:#244e58;box-shadow:0 10px 30px #173f4b22}.motion-ready .mind-topic.central{box-shadow:0 0 0 5px color-mix(in srgb,var(--tone),transparent 91%),0 8px 22px #20464c12}.motion-ready .map-heading-copy{animation:map-copy-in 180ms ease-out}.map-level-badge{display:block;width:fit-content;font-size:9px;letter-spacing:1px;padding:3px 7px;border:1px solid #d5e5df;border-radius:5px;background:#edf6f1;color:#4c7b6a;margin-bottom:7px}.motion-ready .map-zoom{border-radius:12px;padding:6px;box-shadow:0 5px 18px #27463c12;background:#fffffff2}.motion-ready .map-edge{stroke-linecap:round}.motion-ready .map-canvas-hint{background:#ffffffc9;padding:6px 10px;border-radius:7px;bottom:20px;color:#607e79}.motion-ready .map-concept-detail{animation:map-copy-in 180ms ease-out}.motion-ready .map-heading strong{display:block}.motion-ready .map-footer{background:#fbfdfc;border-radius:0 0 18px 18px}@keyframes map-copy-in{from{opacity:.3;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}@media(prefers-reduced-motion:reduce){.motion-ready .map-heading-copy,.motion-ready .map-concept-detail{animation:none}.motion-ready .mind-node{transition:none}.motion-ready .mindmap-world{will-change:auto}}
+diff --git a/tests/mindmap-motion.test.mjs b/tests/mindmap-motion.test.mjs
+new file mode 100644
+--- /dev/null
++++ b/tests/mindmap-motion.test.mjs
+@@ -0,0 +1,16 @@
++import assert from 'node:assert/strict';
++import {sampleTopics} from '../lib/learning-data.ts';
++import {makeMindmap} from '../lib/mindmap-layout.ts';
++import {fitMapCamera,settledMapScene,planMapTransition,sampleMapTransition,interpolateCamera,easeMap,edgeIdentity} from '../lib/mindmap-motion.ts';
++const book=makeMindmap(sampleTopics,{kind:'book'},'测试书籍',false),chapter=makeMindmap(sampleTopics,{kind:'chapter',id:sampleTopics[0].group},'测试书籍',false),topic=makeMindmap(sampleTopics,{kind:'topic',id:sampleTopics[0].id},'测试书籍',false);
++const start=settledMapScene(book,fitMapCamera(book.nodes,1000,620)),plan=planMapTransition(start,chapter);
++for(const progress of [0,.1,.5,.9,1]){const frame=sampleMapTransition(plan,progress),ids=new Set(frame.nodes.map(n=>n.id));assert.equal(ids.size,frame.nodes.length);assert.ok(frame.nodes.every(n=>Number.isFinite(n.x)&&Number.isFinite(n.y)&&n.width>0&&n.height>0&&n.opacity>=0&&n.opacity<=1));assert.ok(frame.edges.every(e=>ids.has(e.from)&&ids.has(e.to)));}
++const first=sampleMapTransition(plan,0);for(const node of start.nodes){const n=first.nodes.find(n=>n.id===node.id);assert.equal(n.x,node.x);assert.equal(n.y,node.y);assert.equal(n.opacity,node.opacity);}
++const end=sampleMapTransition(plan,1);for(const node of chapter.nodes){const n=end.nodes.find(n=>n.id===node.id);assert.equal(n.x,node.x);assert.equal(n.y,node.y);assert.equal(n.width,node.width);assert.equal(n.opacity,1);}
++const middle=sampleMapTransition(plan,.4),retarget=sampleMapTransition(planMapTransition({...middle,camera:start.camera},topic),0);
++for(const node of middle.nodes.filter(n=>n.opacity>.001)){const n=retarget.nodes.find(n=>n.id===node.id);assert.equal(n.x,node.x);assert.equal(n.y,node.y);assert.equal(n.opacity,node.opacity,'Rapid navigation starts from the currently visible frame');}
++assert.ok(sampleMapTransition(plan,.7).nodes.filter(n=>n.exiting).every(n=>n.opacity===0));
++for(const layout of [book,chapter,topic])for(const size of [[390,480],[1000,620]]){const camera=fitMapCamera(layout.nodes,...size);assert.ok(camera.k>0&&Number.isFinite(camera.x));for(const n of layout.nodes){assert.ok(n.x*camera.k+camera.x>=0);assert.ok((n.x+n.width)*camera.k+camera.x<=size[0]);}}
++const from={x:0,y:10,k:1},to={x:200,y:30,k:2};assert.deepEqual(interpolateCamera(from,to,0),from);assert.deepEqual(interpolateCamera(from,to,1),to);assert.equal(easeMap(0),0);assert.equal(easeMap(1),1);
++assert.equal(new Set(topic.edges.map(edgeIdentity)).size,topic.edges.length);
++console.log('Mindmap motion: stable node identity, continuous retargeting, attached edges, fade-out, exact endpoints, and responsive fit passed');
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -12,7 +12,7 @@
+     "start": "node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js dev --config dist/server/wrangler.json --local --persist-to .wrangler/state --ip 127.0.0.1 --inspector-port 0",
+     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+     "db:generate": "drizzle-kit generate",
+-    "test": "node --import ./tests/typescript-loader.mjs tests/learning.test.mjs && node --import ./tests/typescript-loader.mjs tests/links.test.mjs && node --import ./tests/typescript-loader.mjs tests/mindmap.test.mjs && node --import ./tests/typescript-loader.mjs tests/library.test.mjs && node --import ./tests/typescript-loader.mjs tests/contents.test.mjs && node --import ./tests/typescript-loader.mjs tests/subjects.test.mjs && node --import ./tests/typescript-loader.mjs tests/contents-update.test.mjs && node --import ./tests/typescript-loader.mjs tests/runtime-urls.test.mjs && node --import ./tests/typescript-loader.mjs tests/api-worker.test.mjs && node --import ./tests/typescript-loader.mjs tests/model-settings.test.mjs && node --import ./tests/typescript-loader.mjs tests/book-import.test.mjs && node --import ./tests/typescript-loader.mjs tests/library-persistence.test.mjs && node --import ./tests/typescript-loader.mjs tests/book-pricing.test.mjs && node --import ./tests/commerce-loader.mjs tests/commerce.test.mjs && node --import ./tests/typescript-loader.mjs tests/course-recommendations.test.mjs && node tests/paid-channel.test.mjs",
++    "test": "node --import ./tests/typescript-loader.mjs tests/learning.test.mjs && node --import ./tests/typescript-loader.mjs tests/links.test.mjs && node --import ./tests/typescript-loader.mjs tests/mindmap.test.mjs && node --import ./tests/typescript-loader.mjs tests/library.test.mjs && node --import ./tests/typescript-loader.mjs tests/contents.test.mjs && node --import ./tests/typescript-loader.mjs tests/subjects.test.mjs && node --import ./tests/typescript-loader.mjs tests/contents-update.test.mjs && node --import ./tests/typescript-loader.mjs tests/runtime-urls.test.mjs && node --import ./tests/typescript-loader.mjs tests/api-worker.test.mjs && node --import ./tests/typescript-loader.mjs tests/model-settings.test.mjs && node --import ./tests/typescript-loader.mjs tests/book-import.test.mjs && node --import ./tests/typescript-loader.mjs tests/library-persistence.test.mjs && node --import ./tests/typescript-loader.mjs tests/book-pricing.test.mjs && node --import ./tests/commerce-loader.mjs tests/commerce.test.mjs && node --import ./tests/typescript-loader.mjs tests/course-recommendations.test.mjs && node tests/paid-channel.test.mjs && node --import ./tests/typescript-loader.mjs tests/mindmap-motion.test.mjs",
+     "build:pages": "vite build --config vite.pages.config.ts",
+     "preview:pages": "vite preview --config vite.pages.config.ts"
+   },
