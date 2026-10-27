@@ -1,0 +1,183 @@
+diff --git a/.gitignore b/.gitignore
+index b0088c0..2723dac 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -46,3 +46,5 @@ yarn-error.log*
+ 
+ /dist-pages/
+ /github/work/
++
++/dist-site/
+diff --git a/package.json b/package.json
+index 44140b7..f0085dc 100644
+--- a/package.json
++++ b/package.json
+@@ -14,7 +14,9 @@
+     "db:generate": "drizzle-kit generate",
+     "test": "node --import ./tests/typescript-loader.mjs tests/learning.test.mjs && node --import ./tests/typescript-loader.mjs tests/links.test.mjs && node --import ./tests/typescript-loader.mjs tests/mindmap.test.mjs && node --import ./tests/typescript-loader.mjs tests/library.test.mjs && node --import ./tests/typescript-loader.mjs tests/contents.test.mjs && node --import ./tests/typescript-loader.mjs tests/subjects.test.mjs && node --import ./tests/typescript-loader.mjs tests/contents-update.test.mjs && node --import ./tests/typescript-loader.mjs tests/runtime-urls.test.mjs && node --import ./tests/typescript-loader.mjs tests/api-worker.test.mjs && node --import ./tests/typescript-loader.mjs tests/model-settings.test.mjs && node --import ./tests/typescript-loader.mjs tests/book-import.test.mjs && node --import ./tests/typescript-loader.mjs tests/library-persistence.test.mjs && node --import ./tests/typescript-loader.mjs tests/book-pricing.test.mjs && node --import ./tests/commerce-loader.mjs tests/commerce.test.mjs && node --import ./tests/typescript-loader.mjs tests/course-recommendations.test.mjs && node tests/paid-channel.test.mjs && node --import ./tests/typescript-loader.mjs tests/mindmap-motion.test.mjs && node --import ./tests/commerce-loader.mjs tests/learning-credits.test.mjs",
+     "build:pages": "vite build --config vite.pages.config.ts",
+-    "preview:pages": "vite preview --config vite.pages.config.ts"
++    "preview:pages": "vite preview --config vite.pages.config.ts",
++    "build:site": "node scripts/build-site.mjs",
++    "deploy:site": "npm run build:site && wrangler deploy --config github/wrangler.site.jsonc"
+   },
+   "dependencies": {
+     "@base-ui/react": "^1.7.0",
+diff --git a/vite.pages.config.ts b/vite.pages.config.ts
+index 933b872..365ee44 100644
+--- a/vite.pages.config.ts
++++ b/vite.pages.config.ts
+@@ -10,6 +10,6 @@ export default defineConfig({
+  root:path.join(project,'github/pages'),base,publicDir:path.join(project,'public'),
+  resolve:{alias:{'@':project}},plugins:[react()],
+  define:{__STUDY_STATIC__:'true',__STUDY_BASE_PATH__:JSON.stringify(base)},
+- build:{outDir:path.join(project,'dist-pages'),emptyOutDir:true,assetsDir:'',sourcemap:false},
++ build:{outDir:path.join(project,process.env.STUDY_OUTPUT_DIR||'dist-pages'),emptyOutDir:true,assetsDir:'',sourcemap:false},
+  server:{host:'127.0.0.1',port:5174},
+ });
+diff --git a/github/pages/index.html b/github/pages/index.html
+index ada0086..9802454 100644
+--- a/github/pages/index.html
++++ b/github/pages/index.html
+@@ -1,2 +1,2 @@
+ <!doctype html>
+-<html lang="zh-CN"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><meta name="description" content="从封面、目录或科目名称开始，建立独立的学习路线、讲解、思维导图与课程入口。"/><link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg"/><title>知学图谱 · 书籍与科目学习工作台</title></head><body class="antialiased"><div id="root"></div><script type="module" src="/main.tsx"></script></body></html>
++<html lang="zh-CN"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><meta name="description" content="从封面、目录或科目名称开始，建立独立的学习路线、讲解、思维导图与课程入口。"/><link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg"/><link rel="canonical" href="https://jianzicheng.help/"/><title>知学图谱 · 书籍与科目学习工作台</title></head><body class="antialiased"><div id="root"></div><script type="module" src="/main.tsx"></script></body></html>
+diff --git a/github/commerce-assets/index.html b/github/commerce-assets/index.html
+index 92875ef..ba0faa3 100644
+--- a/github/commerce-assets/index.html
++++ b/github/commerce-assets/index.html
+@@ -1,5 +1,5 @@
+ <!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>整本学习课程 · 知学图谱</title><link rel="stylesheet" href="/style.css"><script src="/photos.js" defer></script><script src="/app.js" defer></script></head><body>
+-<header><a class="brand" href="/books">知学图谱<span>整本学习课程</span></a><a href="https://lizichengbusiness-lang.github.io/lizicheng-github.io/" target="_blank" rel="noopener noreferrer">返回学习工作台 ↗</a></header>
++<header><a class="brand" href="/books">知学图谱<span>整本学习课程</span></a><a href="https://jianzicheng.help/" target="_blank" rel="noopener noreferrer">返回学习工作台 ↗</a></header>
+ <main><section class="hero"><span class="eyebrow">从目录开始，把知识一步步学懂</span><h1>一本书，一套完整的<br>配套学习课程。</h1><p>上传封面和目录照片，识别后校对，先查看是否支持。支持的书籍统一 <strong>¥9.90</strong>，微信付款经人工确认后，后台逐节编写。</p><div class="chips"><span>封面与目录识别</span><span>术语解释</span><span>分步讲解</span><span>例题与理解检查</span><span>进度自动保存</span></div></section>
+ <div id="preview-banner" class="notice" hidden>本地预览：请勿真实付款。</div><div id="notice" class="notice" role="status" hidden></div>
+ <div class="layout"><section class="card" id="draft-card"><span class="step">01 / 上传、识别与校对</span><h2>准备你的学习课程</h2><form id="quote-form"><section class="photo-import" aria-labelledby="photo-heading"><h3 id="photo-heading">拍下封面和目录，就能开始</h3><p class="hint">1张封面 + 最多5张目录，支持JPG、PNG、WebP。目录请拍清楚并按页码排序，无需上传整本书。</p><input type="file" id="cover-file" accept="image/*" aria-label="选择封面照片" hidden><input type="file" id="toc-file" accept="image/*" multiple aria-label="选择目录照片" hidden><div class="photo-upload-actions"><button type="button" class="secondary" id="add-cover">＋ 上传封面</button><button type="button" class="secondary" id="add-toc">＋ 上传目录页（可多选）</button></div><p id="photo-status" class="hint" role="status">图片仅在当前页面预览。点击识别前不会发送图片。</p><div id="photo-previews" class="photo-previews"></div><button type="button" id="recognize-book" disabled>识别封面与目录</button><p id="recognition-status" class="hint" role="status" aria-live="polite"></p><p class="hint">点击识别会将所选照片发送至DeepSeek提取文字，本站不保存原图；结果需你校对。识别额度有限，用完后仍可手动输入目录。识别不代表已创建付款订单。</p></section><div class="form-divider"></div><label>书名<input id="title" maxlength="200" placeholder="例如：高等数学、动物生物化学" required></label><div class="book-metadata"><label>作者（选填）<input id="author" maxlength="200" placeholder="识别后自动填写，也可手动输入"></label><label>版次（选填）<input id="edition" maxlength="80" placeholder="例如：第六版"></label></div><label>学习基础<select id="level"><option>零基础</option><option>已有基础</option></select></label><label>完整目录<textarea id="toc" rows="12" maxlength="20000" placeholder="第一章 函数与极限&#10;1.1 函数&#10;1.2 极限&#10;第二章 导数与微分&#10;2.1 导数的概念" required></textarea></label><p class="hint">一行一个章名或小节。目录决定生成范围，付款后不能修改该订单的目录。</p><button id="quote-button" type="submit">查看整本报价</button></form><section id="quote-result" class="result" hidden></section></section>
+diff --git a/github/commerce-assets/app.js b/github/commerce-assets/app.js
+index 32137a1..dce6597 100644
+--- a/github/commerce-assets/app.js
++++ b/github/commerce-assets/app.js
+@@ -53,7 +53,7 @@ function renderOrder(order){
+  loadBookVideos(order.title);
+  renderLessons(order.lessons||[]);
+ }
+-function renderLessons(lessons){$('lessons-card').hidden=!lessons.length;const box=$('lessons');box.replaceChildren();for(const item of lessons){const l=item.lesson;const details=document.createElement('details');details.className='lesson';details.innerHTML=`<summary>${item.index+1}. ${esc(item.unit.title)}</summary><div class="lesson-body"><h3>学习目标</h3><p>${esc(l.goal)}</p><h3>从一个问题开始</h3><p>${esc(l.opening)}</p><h3>先认识这些词</h3>${l.terms.map(t=>`<p><strong>${esc(t.name)}</strong>：${esc(t.meaning)}</p>`).join('')}${l.steps.map((s,i)=>`<h3>${i+1}. ${esc(s.title)}</h3><p>${esc(s.body)}</p>`).join('')}<h3>跟着做一个例子</h3><p>${esc(l.example.question)}</p><p>${esc(l.example.reasoning)}</p><p>${esc(l.example.answer)}</p><h3>理解检查</h3>${l.checks.map(c=>`<p><strong>${esc(c.question)}</strong><br>${esc(c.answer)}</p>`).join('')}<p class="hint">AI 配套学习讲解，未读取原书正文，内容请结合教材核对。</p><p><a class="video-watch" href="https://lizichengbusiness-lang.github.io/lizicheng-github.io/" target="_blank" rel="noopener noreferrer">导入完整学习库后，在本节课后提问与练习 ↗</a></p></div>`;box.append(details);}}
++function renderLessons(lessons){$('lessons-card').hidden=!lessons.length;const box=$('lessons');box.replaceChildren();for(const item of lessons){const l=item.lesson;const details=document.createElement('details');details.className='lesson';details.innerHTML=`<summary>${item.index+1}. ${esc(item.unit.title)}</summary><div class="lesson-body"><h3>学习目标</h3><p>${esc(l.goal)}</p><h3>从一个问题开始</h3><p>${esc(l.opening)}</p><h3>先认识这些词</h3>${l.terms.map(t=>`<p><strong>${esc(t.name)}</strong>：${esc(t.meaning)}</p>`).join('')}${l.steps.map((s,i)=>`<h3>${i+1}. ${esc(s.title)}</h3><p>${esc(s.body)}</p>`).join('')}<h3>跟着做一个例子</h3><p>${esc(l.example.question)}</p><p>${esc(l.example.reasoning)}</p><p>${esc(l.example.answer)}</p><h3>理解检查</h3>${l.checks.map(c=>`<p><strong>${esc(c.question)}</strong><br>${esc(c.answer)}</p>`).join('')}<p class="hint">AI 配套学习讲解，未读取原书正文，内容请结合教材核对。</p><p><a class="video-watch" href="https://jianzicheng.help/" target="_blank" rel="noopener noreferrer">导入完整学习库后，在本节课后提问与练习 ↗</a></p></div>`;box.append(details);}}
+ $('quote-form').addEventListener('submit',async e=>{
+  e.preventDefault();if(recognizing||window.bookPhotos.isReading())return;loadBookVideos($('title').value);if(requestBusy)return;requestBusy=true;$('quote-button').disabled=true;notice('');
+  try{draft={title:$('title').value.trim(),toc:$('toc').value.trim(),level:$('level').value,author:$('author').value.trim(),edition:$('edition').value.trim()};const quotedBook={...draft},revision=preparationRevision;const q=await api('/quote',{method:'POST',body:JSON.stringify(quotedBook)});if(revision!==preparationRevision)throw new Error('书名、目录或图片已改变，请重新查看报价。');const box=$('quote-result');box.hidden=false;
+diff --git a/github/commerce-assets/practice.html b/github/commerce-assets/practice.html
+index 37eb267..a215576 100644
+--- a/github/commerce-assets/practice.html
++++ b/github/commerce-assets/practice.html
+@@ -1 +1 @@
+-<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>购买学习次数 · 知学图谱</title><link rel="stylesheet" href="/style.css"><script src="/practice.js" defer></script></head><body><header><a class="brand" href="/books">知学图谱<span>课后提问与练习</span></a><a href="https://lizichengbusiness-lang.github.io/lizicheng-github.io/" id="return-top">返回学习工作台 ↗</a></header><main><section class="hero small"><span class="eyebrow">一个问题，一次理解的进步</span><h1>给学习，多一点回应。</h1><p>本节课程提问或生成一组5道练习题，共用次数。每次 <strong>¥0.09</strong>，成功后扣1次；已保存答案再次查看免费。</p></section><div id="practice-notice" class="notice" role="status" hidden></div><div class="layout"><section class="card"><span class="step">01 / 选择次数</span><h2>按需购买，不用注册</h2><form id="buy-form"><label>购买次数<input id="quantity" type="number" value="10" min="10" max="100" step="10" required></label><p class="hint">只能购买10、20、30…100次，默认10次；单次最多100次。</p><div class="price" id="total">¥0.90</div><label class="checklabel"><input id="accept" type="checkbox" required>我了解需要微信付款并等待商家人工核对，且须自行保存次数恢复凭证。</label><button id="buy-button" type="submit">创建 ¥0.90 付款订单</button></form><p class="hint">提问与出题依据课程内容，不读取原书。每次有固定回答长度和处理时限；追加提问、换难度或重新出题均为新的一次。服务异常未成功时不扣次数。次数可跨课程使用。</p></section><aside><section class="card compact"><h3>已有次数？</h3><form id="pass-form"><label>次数恢复凭证<textarea id="pass-code" rows="3" spellcheck="false" autocomplete="off" placeholder="LW开头的编号:访问凭证" required></textarea></label><button class="secondary">恢复余额与订单</button></form><p class="hint">恢复凭证可以使用次数、查看问答记录，请勿公开分享。清理浏览器或换设备时，凭证是恢复权益的依据。</p></section></aside></div><section id="wallet-card" class="card" hidden><span class="step">02 / 保存你的次数凭证</span><h2 id="balance"></h2><p class="hint">这里的次数凭证与整本课程订单凭证不同，请单独保存。网站不会通过邮箱或手机号为你找回凭证。</p><div class="credentials" id="receipt"></div><div class="actions"><button class="secondary" id="download-pass">下载次数恢复凭证</button><button class="secondary" id="refresh-wallet">刷新余额与订单</button><a id="return-study" class="video-watch">返回课程并在本设备启用次数 ↗</a></div><p class="hint">返回学习页启用后，同一凭证此前设备的提问会话会失效。笔记和学习进度不会自动跨设备迁移。</p></section><section id="topups"></section></main><footer>人工收款模式 · 请核对订单金额和收款方，勿重复付款。<br>订单关闭不会自动退款；退款请联系收款方人工处理。</footer></body></html>
++<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>购买学习次数 · 知学图谱</title><link rel="stylesheet" href="/style.css"><script src="/practice.js" defer></script></head><body><header><a class="brand" href="/books">知学图谱<span>课后提问与练习</span></a><a href="https://jianzicheng.help/" id="return-top">返回学习工作台 ↗</a></header><main><section class="hero small"><span class="eyebrow">一个问题，一次理解的进步</span><h1>给学习，多一点回应。</h1><p>本节课程提问或生成一组5道练习题，共用次数。每次 <strong>¥0.09</strong>，成功后扣1次；已保存答案再次查看免费。</p></section><div id="practice-notice" class="notice" role="status" hidden></div><div class="layout"><section class="card"><span class="step">01 / 选择次数</span><h2>按需购买，不用注册</h2><form id="buy-form"><label>购买次数<input id="quantity" type="number" value="10" min="10" max="100" step="10" required></label><p class="hint">只能购买10、20、30…100次，默认10次；单次最多100次。</p><div class="price" id="total">¥0.90</div><label class="checklabel"><input id="accept" type="checkbox" required>我了解需要微信付款并等待商家人工核对，且须自行保存次数恢复凭证。</label><button id="buy-button" type="submit">创建 ¥0.90 付款订单</button></form><p class="hint">提问与出题依据课程内容，不读取原书。每次有固定回答长度和处理时限；追加提问、换难度或重新出题均为新的一次。服务异常未成功时不扣次数。次数可跨课程使用。</p></section><aside><section class="card compact"><h3>已有次数？</h3><form id="pass-form"><label>次数恢复凭证<textarea id="pass-code" rows="3" spellcheck="false" autocomplete="off" placeholder="LW开头的编号:访问凭证" required></textarea></label><button class="secondary">恢复余额与订单</button></form><p class="hint">恢复凭证可以使用次数、查看问答记录，请勿公开分享。清理浏览器或换设备时，凭证是恢复权益的依据。</p></section></aside></div><section id="wallet-card" class="card" hidden><span class="step">02 / 保存你的次数凭证</span><h2 id="balance"></h2><p class="hint">这里的次数凭证与整本课程订单凭证不同，请单独保存。网站不会通过邮箱或手机号为你找回凭证。</p><div class="credentials" id="receipt"></div><div class="actions"><button class="secondary" id="download-pass">下载次数恢复凭证</button><button class="secondary" id="refresh-wallet">刷新余额与订单</button><a id="return-study" class="video-watch">返回课程并在本设备启用次数 ↗</a></div><p class="hint">返回学习页启用后，同一凭证此前设备的提问会话会失效。笔记和学习进度不会自动跨设备迁移。</p></section><section id="topups"></section></main><footer>人工收款模式 · 请核对订单金额和收款方，勿重复付款。<br>订单关闭不会自动退款；退款请联系收款方人工处理。</footer></body></html>
+diff --git a/github/commerce-assets/practice.js b/github/commerce-assets/practice.js
+index 1324d49..ec59de7 100644
+--- a/github/commerce-assets/practice.js
++++ b/github/commerce-assets/practice.js
+@@ -1,6 +1,6 @@
+ 'use strict';
+ const $=id=>document.getElementById(id),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+-const key='zhixue-learning-pass-v1',home='https://lizichengbusiness-lang.github.io/lizicheng-github.io/';let pass=null,busy=false,config=null;
++const key='zhixue-learning-pass-v1',home='https://jianzicheng.help/';let pass=null,busy=false,config=null;
+ const parse=s=>{const m=s.trim().match(/^(LW[A-F0-9]{48}):([a-f0-9]{48})$/);return m?{id:m[1],token:m[2]}:null;};
+ function notice(text,error=false){$('practice-notice').hidden=!text;$('practice-notice').textContent=text;$('practice-notice').className='notice'+(error?' error':'');}
+ async function api(path,body){const r=await fetch('/api/commerce/learning/wallets'+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json',...(pass?{Authorization:'Bearer '+pass.token}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})});const b=await r.json();if(!r.ok)throw new Error(b.error||'请求未完成');return b;}
+diff --git a/github/wrangler.api.jsonc b/github/wrangler.api.jsonc
+index 299d149..ffd085e 100644
+--- a/github/wrangler.api.jsonc
++++ b/github/wrangler.api.jsonc
+@@ -13,7 +13,7 @@
+     // Example: "https://your-account.github.io,http://localhost:4173"
+     // Use origins only: no repository path, trailing slash or wildcard.
+     // Empty means no website can call the model or course endpoints.
+-    "ALLOWED_ORIGINS": "https://lizichengbusiness-lang.github.io,https://api.jianzicheng.help"
++    "ALLOWED_ORIGINS": "https://lizichengbusiness-lang.github.io,https://api.jianzicheng.help,https://jianzicheng.help"
+   },
+   "observability": {
+     "enabled": false
+diff --git a/github/wrangler.site.jsonc b/github/wrangler.site.jsonc
+new file mode 100644
+index 0000000..184dee7
+--- /dev/null
++++ b/github/wrangler.site.jsonc
+@@ -0,0 +1,14 @@
++{
++  "$schema": "../node_modules/wrangler/config-schema.json",
++  "name": "jianzicheng-study",
++  "account_id": "e879619ff61451aead0744c822b6850c",
++  "compatibility_date": "2026-10-27",
++  "workers_dev": false,
++  "preview_urls": false,
++  "routes": [{"pattern": "jianzicheng.help", "custom_domain": true}],
++  "assets": {
++    "directory": "../dist-site",
++    "not_found_handling": "single-page-application"
++  },
++  "observability": {"enabled": false}
++}
+diff --git a/github/DEPLOY-SITE.md b/github/DEPLOY-SITE.md
+new file mode 100644
+index 0000000..ceed47a
+--- /dev/null
++++ b/github/DEPLOY-SITE.md
+@@ -0,0 +1,27 @@
++# 学习主站部署
++
++主站由 Cloudflare Workers Static Assets 直接托管，正式地址为 https://jianzicheng.help/ 。浏览器加载网页、脚本、图片和 PDF 解析资源均不依赖 GitHub Pages。GitHub 保留源码和原 Pages 备用站。
++
++后端仍为 https://api.jianzicheng.help ，使用原有 Worker、Durable Object 订单数据库和 Secrets。主站不持有模型密钥或管理密码。
++
++在重建的项目源码目录中，使用 Node 24 和锁定依赖：
++
++```sh
++npm ci
++npx tsc --noEmit
++npm test
++npm run build:site
++npx wrangler deploy --config github/wrangler.site.jsonc
++```
++
++修改后端链接或访问许可时，还需独立发布现有后端：
++
++```sh
++npx wrangler deploy --config github/wrangler.api.jsonc
++```
++
++`build:site` 固定使用根路径并输出 `dist-site/`，不会覆盖 GitHub Pages 的 `dist-pages/` 构建。主站没有运行时 Worker 脚本，静态请求不调用订单 Worker。
++
++GitHub 当前的 Pages workflow 继续验证并发布备用站；它不会自动发布 Cloudflare 主站。每次主站源码更新后须执行以上 Cloudflare 部署命令，或另行配置经过授权的自动部署凭证。
++
++本次迁移不导入旧站测试数据。不同网站来源的本地书架、笔记和次数会话相互独立，已有订单和次数可以使用恢复凭证找回。发布目录不得包含学习库备份、`.dev.vars`、Secrets 或私人订单凭证。
+diff --git a/scripts/build-site.mjs b/scripts/build-site.mjs
+new file mode 100644
+index 0000000..716e6d9
+--- /dev/null
++++ b/scripts/build-site.mjs
+@@ -0,0 +1,23 @@
++import {spawnSync, execFileSync} from 'node:child_process';
++import {writeFileSync} from 'node:fs';
++import {fileURLToPath} from 'node:url';
++import path from 'node:path';
++
++const root=fileURLToPath(new URL('../',import.meta.url));
++const result=spawnSync(process.execPath,[path.join(root,'node_modules/vite/bin/vite.js'),'build','--config','vite.pages.config.ts'],{
++  cwd:root,stdio:'inherit',env:{...process.env,STUDY_BASE_PATH:'/',STUDY_OUTPUT_DIR:'dist-site'},
++});
++if(result.error)throw result.error;
++if(result.status!==0)process.exit(result.status??1);
++let commit=process.env.GITHUB_SHA;
++if(!commit){try{commit=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();}catch{commit='local';}}
++writeFileSync(path.join(root,'dist-site/deployment.json'),JSON.stringify({
++  commit,release:process.env.STUDY_RELEASE_ID||commit,origin:'https://jianzicheng.help',builtAt:new Date().toISOString(),
++},null,2)+'\n');
++// These headers are consumed by Cloudflare Assets; no Worker invocation is needed.
++writeFileSync(path.join(root,'dist-site/_headers'),`/*
++  X-Content-Type-Options: nosniff
++  X-Frame-Options: DENY
++  Referrer-Policy: no-referrer
++  Cache-Control: no-cache
++`);
