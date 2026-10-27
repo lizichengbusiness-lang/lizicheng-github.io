@@ -1,18 +1,3 @@
-diff --git a/DEPLOY-BACKEND.md b/DEPLOY-BACKEND.md
---- a/DEPLOY-BACKEND.md
-+++ b/DEPLOY-BACKEND.md
-@@ -6,9 +6,9 @@
- 
- ## 已部署地址
- 
--后端：https://zhixue-learning-api.zhixue-lizicheng.workers.dev
-+后端：https://api.jianzicheng.help
- 
--健康检查：https://zhixue-learning-api.zhixue-lizicheng.workers.dev/health
-+健康检查：https://api.jianzicheng.help/health
- 
- 网站：https://lizichengbusiness-lang.github.io/lizicheng-github.io/
- 
 diff --git a/app/page.tsx b/app/page.tsx
 --- a/app/page.tsx
 +++ b/app/page.tsx
@@ -42,19 +27,6 @@ diff --git a/app/page.tsx b/app/page.tsx
    (async()=>{try{
     const r=await fetch(apiUrl('/api/courses',backend),{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({query:title})});
     const d=await r.json() as {error?:string;courses?:Course[];statuses?:Record<string,string>};
-diff --git a/github/COMMERCE.md b/github/COMMERCE.md
---- a/github/COMMERCE.md
-+++ b/github/COMMERCE.md
-@@ -1,7 +1,7 @@
- # 知学图谱：9.9 元整本课程与微信收款
- 
--顾客页面：https://zhixue-learning-api.zhixue-lizicheng.workers.dev/books
--管理页面：https://zhixue-learning-api.zhixue-lizicheng.workers.dev/admin
-+顾客页面：https://api.jianzicheng.help/books
-+管理页面：https://api.jianzicheng.help/admin
- 学习工作台：https://lizichengbusiness-lang.github.io/lizicheng-github.io/
- 
- 学习工作台的侧栏新增“¥9.9 整本生成”，会预填当前书名与目录。
 diff --git a/github/commerce-assets/app.js b/github/commerce-assets/app.js
 --- a/github/commerce-assets/app.js
 +++ b/github/commerce-assets/app.js
