@@ -1,0 +1,120 @@
+diff --git a/DEPLOY-BACKEND.md b/DEPLOY-BACKEND.md
+--- a/DEPLOY-BACKEND.md
++++ b/DEPLOY-BACKEND.md
+@@ -6,9 +6,9 @@
+ 
+ ## 已部署地址
+ 
+-后端：https://zhixue-learning-api.zhixue-lizicheng.workers.dev
++后端：https://api.jianzicheng.help
+ 
+-健康检查：https://zhixue-learning-api.zhixue-lizicheng.workers.dev/health
++健康检查：https://api.jianzicheng.help/health
+ 
+ 网站：https://lizichengbusiness-lang.github.io/lizicheng-github.io/
+ 
+diff --git a/app/page.tsx b/app/page.tsx
+--- a/app/page.tsx
++++ b/app/page.tsx
+@@ -16,6 +16,7 @@
+ import {beginnerLesson} from '@/lib/beginner-lessons';
+ import {reviseContents} from '@/lib/contents-update';
+ import {assetUrl,apiUrl} from '@/lib/runtime-urls';
++import {STUDY_SERVICE_ORIGIN} from '@/lib/service-origin';
+ type View="learn"|"graph"|"courses";
+ type Modal="library"|"import"|"sources"|null;
+ const defaultTitle="动物生物化学";
+@@ -52,7 +53,7 @@
+   setBookDraft(intent==='update'?{photos:[],title,author:bookPlan?.author||'',edition:bookPlan?.edition||'',toc,field,level}:null);open('import');
+  }
+  function play(c:Course){window.open(c.url,'_blank','noopener,noreferrer');}
+- function openPaidBook(draft?:{title?:string;toc?:string;level?:string}){const url=new URL('https://zhixue-learning-api.zhixue-lizicheng.workers.dev/books');if(draft){const bytes=new TextEncoder().encode(JSON.stringify(draft));let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);url.hash='draft='+btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}window.open(url.href,'_blank','noopener,noreferrer');}
++ function openPaidBook(draft?:{title?:string;toc?:string;level?:string}){const url=new URL('/books',STUDY_SERVICE_ORIGIN);if(draft){const bytes=new TextEncoder().encode(JSON.stringify(draft));let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);url.hash='draft='+btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}window.open(url.href,'_blank','noopener,noreferrer');}
+  function backup(){downloadJson('知学图谱-完整学习库备份.json',JSON.parse(serializeLibrary(library)));notify(`已备份${library.spaces.length}个学习项目，不包含API密钥`);}
+  async function readFile(file:File){setError('');try{
+   if(!file.name.toLowerCase().endsWith('.json'))throw new Error('请选择JSON学习备份。封面与目录请在上传窗口添加。');
+@@ -97,7 +98,7 @@
+   if(!ready)return;
+   const controller=new AbortController();courseJob.current?.abort();courseJob.current=controller;
+   setLive([]);setStatuses({});setSearching(true);
+-  const backend='https://zhixue-learning-api.zhixue-lizicheng.workers.dev';
++  const backend=STUDY_SERVICE_ORIGIN;
+   (async()=>{try{
+    const r=await fetch(apiUrl('/api/courses',backend),{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({query:title})});
+    const d=await r.json() as {error?:string;courses?:Course[];statuses?:Record<string,string>};
+diff --git a/github/COMMERCE.md b/github/COMMERCE.md
+--- a/github/COMMERCE.md
++++ b/github/COMMERCE.md
+@@ -1,7 +1,7 @@
+ # 知学图谱：9.9 元整本课程与微信收款
+ 
+-顾客页面：https://zhixue-learning-api.zhixue-lizicheng.workers.dev/books
+-管理页面：https://zhixue-learning-api.zhixue-lizicheng.workers.dev/admin
++顾客页面：https://api.jianzicheng.help/books
++管理页面：https://api.jianzicheng.help/admin
+ 学习工作台：https://lizichengbusiness-lang.github.io/lizicheng-github.io/
+ 
+ 学习工作台的侧栏新增“¥9.9 整本生成”，会预填当前书名与目录。
+diff --git a/github/commerce-assets/app.js b/github/commerce-assets/app.js
+--- a/github/commerce-assets/app.js
++++ b/github/commerce-assets/app.js
+@@ -46,7 +46,7 @@
+  const payment=['pending','submitted'].includes(order.status);
+  box.innerHTML=`<span class="step">02 / 订单与编写进度</span><div class="toolbar"><div><h2>${esc(order.title)}</h2><span class="badge">${esc(order.statusLabel)}</span></div><span class="price">¥9.90</span></div><p class="order-meta">订单号：<strong>${esc(order.id)}</strong><br>已完成 ${order.completed} / ${order.units} 个学习单元</p><div class="progress"><div id="progress-fill"></div></div>${order.error?`<div class="notice error">${esc(order.error)}</div>`:''}<details><summary>查看并保存订单恢复凭证</summary><p class="hint">关闭网页后凭此恢复进度。凭证可以访问课程，请不要公开分享。</p><div class="credentials">${esc(credentials)}</div><button class="secondary receipt-button" id="save-receipt">下载订单凭证</button></details>${payment?`<div class="payment"><div><a href="/payments/wechat.jpg" target="_blank" rel="noopener noreferrer"><img class="qr" src="/payments/wechat.jpg" alt="商家微信收款码，点击查看大图"></a><p class="hint">请在微信确认收款方：春花满目望君秋。支付金额 ¥9.90，尽量备注订单号。</p></div><div><h3>${order.status==='submitted'?'已提交，等待商家核对':'使用微信支付 ¥9.90'}</h3><p class="hint">付款前请确认书名、完整目录和生成范围。支付后填写付款时间和付款方昵称，商家核对真实到账后开始编写。请勿重复付款。</p><form id="payment-form"><label>付款核对信息<input id="payment-note" maxlength="160" minlength="4" placeholder="例如：10月26日 20:30，付款昵称小李" required></label><button type="submit">${order.status==='submitted'?'更新付款核对信息':'我已付款，提交人工核对'}</button></form></div></div>`:''}<div class="actions"><button class="secondary" id="refresh-order">刷新进度</button>${order.status==='complete'?'<button id="download-book">下载完整学习库</button>':''}</div><p class="hint">已完成的课程可在下方阅读。完整学习库可导入知学图谱的“书架与科目”。</p>`;
+  $('progress-fill').style.width=Math.round(order.completed/order.units*100)+'%';
+- $('save-receipt').addEventListener('click',()=>saveFile(order.id+'-恢复凭证.txt',credentials+'\n书名：'+order.title+'\n访问：https://zhixue-learning-api.zhixue-lizicheng.workers.dev/books\n','text/plain'));
++ $('save-receipt').addEventListener('click',()=>saveFile(order.id+'-恢复凭证.txt',credentials+'\n书名：'+order.title+'\n访问：https://api.jianzicheng.help/books\n','text/plain'));
+  $('refresh-order').addEventListener('click',()=>openOrder(current));
+  if(payment)$('payment-form').addEventListener('submit',async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;try{const updated=await api('/orders/'+current.id+'/payment',{method:'POST',headers:{Authorization:'Bearer '+current.token},body:JSON.stringify({note:$('payment-note').value})});notice('已提交付款信息，等待商家核对到账。');renderOrder(updated);schedule(updated);}catch(error){notice(error.message,true);button.disabled=false;}});
+  if(order.status==='complete')$('download-book').addEventListener('click',async()=>{try{const data=await api('/orders/'+current.id+'/download',{headers:{Authorization:'Bearer '+current.token}});saveFile(order.title+'-学习库.json',JSON.stringify(data,null,2));}catch(error){notice(error.message,true);}});
+diff --git a/github/commerce-assets/practice.js b/github/commerce-assets/practice.js
+--- a/github/commerce-assets/practice.js
++++ b/github/commerce-assets/practice.js
+@@ -12,6 +12,6 @@
+ $('buy-form').addEventListener('submit',async e=>{e.preventDefault();if(busy)return;const n=Number($('quantity').value);if(!Number.isInteger(n)||n<10||n>100||n%10)return notice('只能购买10、20…100次。',true);busy=true;amount();try{if(!pass){const b=await api('',{});save({id:b.wallet.id,token:b.accessToken});render(b.wallet);}await api('/'+pass.id+'/orders',{quantity:n});await refresh();notice('订单已创建，请先保存次数凭证，再核对金额扫码付款。');$('wallet-card').scrollIntoView({behavior:'smooth',block:'start'});}catch(e){notice(e.message,true);}finally{busy=false;amount();}});
+ $('pass-form').addEventListener('submit',async e=>{e.preventDefault();const p=parse($('pass-code').value);if(!p)return notice('次数恢复凭证格式无效，请完整粘贴。',true);const previous=pass;pass=p;try{await refresh();save(p);$('pass-code').value='';notice('已恢复余额与订单。');}catch(e){pass=previous;notice(e.message,true);}});
+ $('refresh-wallet').addEventListener('click',()=>refresh().then(()=>notice('已刷新。')).catch(e=>notice(e.message,true)));
+-$('download-pass').addEventListener('click',()=>{if(!pass)return;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([pass.id+':'+pass.token+'\n次数购买与恢复：https://zhixue-learning-api.zhixue-lizicheng.workers.dev/practice\n请勿分享此凭证。'],{type:'text/plain'}));a.download='知学图谱-次数恢复凭证.txt';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);});
++$('download-pass').addEventListener('click',()=>{if(!pass)return;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([pass.id+':'+pass.token+'\n次数购买与恢复：https://api.jianzicheng.help/practice\n请勿分享此凭证。'],{type:'text/plain'}));a.download='知学图谱-次数恢复凭证.txt';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);});
+ async function init(){try{if(location.hash.startsWith('#pass=')){const raw=location.hash.slice(6);history.replaceState(null,'',location.pathname);const p=parse(decodeURIComponent(raw));if(p)save(p);}else{const p=JSON.parse(localStorage.getItem(key)||'null');if(p&&parse(p.id+':'+p.token))pass=p;}if(pass)await refresh();}catch(e){notice(e.message,true);}try{const r=await fetch('/api/commerce/config');config=await r.json();if(!config.acceptingOrders)notice('当前暂不接受新付款订单，请稍后再来。',true);if(config.preview)notice('本地预览，请勿真实付款。');}catch{notice('无法确认服务状态，请稍后再试。',true);config={acceptingOrders:false};}amount();}
+ init();
+diff --git a/github/wrangler.api.jsonc b/github/wrangler.api.jsonc
+--- a/github/wrangler.api.jsonc
++++ b/github/wrangler.api.jsonc
+@@ -4,6 +4,7 @@
+   "main": "./commerce-worker.ts",
+   "compatibility_date": "2026-10-01",
+   "workers_dev": true,
++  "routes": [{"pattern": "api.jianzicheng.help", "custom_domain": true}],
+   "preview_urls": false,
+   "assets": {"directory": "./commerce-assets", "binding": "COMMERCE_ASSETS", "run_worker_first": true, "html_handling": "none"},
+   "durable_objects": {"bindings": [{"name": "ORDERS", "class_name": "BookCommerce"}]},
+@@ -12,7 +13,7 @@
+     // Example: "https://your-account.github.io,http://localhost:4173"
+     // Use origins only: no repository path, trailing slash or wildcard.
+     // Empty means no website can call the model or course endpoints.
+-    "ALLOWED_ORIGINS": "https://lizichengbusiness-lang.github.io"
++    "ALLOWED_ORIGINS": "https://lizichengbusiness-lang.github.io,https://api.jianzicheng.help"
+   },
+   "observability": {
+     "enabled": false
+diff --git a/lib/learning-client.ts b/lib/learning-client.ts
+--- a/lib/learning-client.ts
++++ b/lib/learning-client.ts
+@@ -1,7 +1,8 @@
++import {STUDY_SERVICE_ORIGIN} from './service-origin';
+ import {apiUrl} from './runtime-urls';
+ import type {Lesson} from './curriculum';
+ import type {PracticeResult} from './learning-credits';
+-export const LEARNING_BACKEND='https://zhixue-learning-api.zhixue-lizicheng.workers.dev';
++export const LEARNING_BACKEND=STUDY_SERVICE_ORIGIN;
+ export const PASS_STORAGE='zhixue-learning-pass-v1';
+ export type LearningPass={id:string;token:string;session:string};
+ export type PracticeCall={id:string;cursor:number;kind:string;book:string;topic:string;question:string;status:string;createdAt:number;result:PracticeResult|null;error:string;charged:number};
+diff --git a/lib/service-origin.ts b/lib/service-origin.ts
+new file mode 100644
+--- /dev/null
++++ b/lib/service-origin.ts
+@@ -0,0 +1,2 @@
++/** Canonical customer-facing backend; the Worker and order store are unchanged. */
++export const STUDY_SERVICE_ORIGIN = 'https://api.jianzicheng.help';
